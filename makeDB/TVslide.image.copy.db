@@ -1,0 +1,328 @@
+#!/usr/bin/perl -w 
+
+use File::Basename;
+use Getopt::Std;
+use Image::ExifTool ':Public';
+use DBI qw(:sql_types);
+use Digest::MD5::File qw(dir_md5_hex file_md5_hex url_md5_hex);
+
+sub my_rand;
+sub gaussian_rand;
+
+srand( time() ^ ($$ + ($$ << 15)) );
+
+$delay = 1800;
+$debug = 0; $chksize = 0;
+getopts('sd');
+$debug = 1 if $opt_d;
+$chksize = 1 if $opt_s;
+$i = 0;
+$DBbase = "/home/jim/tools/TVSlideShow/sql/TVslides.image.sql";
+$DB = $DBbase . ".new";
+$DBold = $DBbase . ".old";
+$DBtable = "pictures";
+my $db = DBI->connect("dbi:SQLite:$DB", "", "",
+    {RaiseError => 1, AutoCommit => 1}) or die $DBI::errstr;
+$db->do("DROP TABLE IF EXISTS $DBtable");
+my $dbPrev = DBI->connect("dbi:SQLite:$DBbase", "", "",
+    {RaiseError => 1, AutoCommit => 1}) or die $DBI::errstr;
+
+open DIRS, "find /home/jim/pictures -type d |" or die "unable to collect directories";
+while (<DIRS>) {
+    chomp;
+    last if $i > 100 && $debug;
+#    next if $_ =~ m/Slides/;
+    next if $_ =~ m/xvpics/;
+#keep these?
+    next if $_ =~ m/[0-9][0-9]x[0-9][0-9]/;
+    next if $_ =~ m/allergy/;
+    next if $_ =~ m/4sale/;
+    next if $_ =~ m/xvpics/;
+    next if $_ =~ m/small/;
+    next if $_ =~ m/images/;
+    next if $_ =~ m/Jaye/;
+    next if $_ =~ m/test/;
+    next if $_ =~ m/Test2/;
+    next if $_ =~ m/Rotate/;
+    $dirlist[$i] = $_ . "/";
+    $i++;
+    }
+close DIRS;
+$pictypes = "-iname '*jpg' -o -iname '*.jpeg' -o -iname '*pef' -o -iname '*tif' -o -iname '*gif'";
+$pics = 0;        
+for ($i = 0; $i <= $#dirlist ; $i++) {
+    $skip = 0;
+    $nkeys = keys %dirsused;
+    if ($nkeys) {
+        foreach $k (keys %dirsused) {
+            $skip = 1 if $dirlist[$i] =~ m/$k/;
+            }
+        }
+    if (!$skip) {
+        open PICS, "find \"$dirlist[$i]\" -maxdepth 1 $pictypes | " or die "failed to open $dirlist[$i]";
+        while (<PICS>) {
+            chomp;
+            ($dev, $ino, $mode, $nlink, $uid, $gid, $rdev, $size, $atime, $mtime,
+                $ctime, $blksize, $blocks) = stat $_;
+            $inode{$ino} = $inode{$ino} . ":" . $_ if $inode{$ino};
+            $inode{$ino} = $_ if !$inode{$ino};
+            $dirsused{$dirlist[$i]} = 1;
+            $pics++;
+            }
+        }
+        close PICS;
+    }
+@nodups = ();
+foreach $in (keys %inode) {
+    @files = split /:/, $inode{$in};
+    $keep = $files[0];
+    for ($i=1; $i<=$#files; $i++) {
+        $keep = $files[$i] if length($files[$i]) > length($keep);
+        }
+    push @nodups, $keep;
+}
+print "$#nodups non-duplicates of $pics total\n";
+@nodups = sort @nodups;
+
+open CULL, "find /home/jim/pictures/Rotate/Cull -type f |" or die "unable to read Cull directory";
+while (<CULL>) {
+    chomp;
+    @name = split /\//;
+    $cull{$name[$#name]} = 1;
+    }
+close CULL;
+
+open FLIPLR, "find /home/jim/pictures/Rotate/FlipLR -type f |" or die "unable to read FlipLR directory";
+while (<FLIPLR>) {
+    chomp;
+    @name = split /\//;
+    $flipLR{$name[$#name]} = 1;
+    }
+close FLIPLR;
+
+open FLIPUD, "find /home/jim/pictures/Rotate/FlipUD -type f |" or die "unable to read FlipUD directory";
+while (<FLIPUD>) {
+    chomp;
+    @name = split /\//;
+    $flipUD{$name[$#name]} = 1;
+    }
+close FLIPUD;
+
+open L90, "find /home/jim/pictures/Rotate/L90 -type f |" or die "unable to read L90 directory";
+while (<L90>) {
+    chomp;
+    @name = split /\//;
+    $l90{$name[$#name]} = 1;
+    }
+close L90;
+
+open OK, "find /home/jim/pictures/Rotate/OK -type f |" or die "unable to read OK directory";
+while (<OK>) {
+    chomp;
+    @name = split /\//;
+    $ok{$name[$#name]} = 1;
+    }
+close OK;
+
+open R180, "find /home/jim/pictures/Rotate/R180 -type f |" or die "unable to read R180 directory";
+while (<R180>) {
+    chomp;
+    @name = split /\//;
+    $r180{$name[$#name]} = 1;
+    }
+close R180;
+
+open R90, "find /home/jim/pictures/Rotate/R90 -type f |" or die "unable to read R90 directory";
+while (<R90>) {
+    chomp;
+    @name = split /\//;
+    $r90{$name[$#name]} = 1;
+    }
+close R90;
+
+$db->do("CREATE TABLE IF NOT EXISTS $DBtable (id INTEGER PRIMARY KEY,
+	timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+	filename DEFAULT NULL,
+	rotate DEFAULT NULL,
+	label DEFAULT NULL,
+	location DEFAULT NULL,
+	mtime REAL DEFAULT NULL,
+	md5sum DEFAULT NULL,
+	image BLOB DEFAULT NULL
+	);") or die $DBI::errstr;
+$db->do("CREATE INDEX IF NOT EXISTS locations ON $DBtable (location);") or die $DBI::errstr;
+$db->do("CREATE INDEX IF NOT EXISTS files ON $DBtable (filename);") or die $DBI::errstr;
+
+					       
+for ($i=0; $i<=$#nodups; $i++) {
+    
+    $pic = $nodups[$i];
+    $md5sum = file_md5_hex($pic);
+    $select = "SELECT timestamp, rotate, label, location, mtime, md5sum, image FROM $DBtable WHERE filename = ?";
+    #$select = "SELECT COUNT(*) FROM $DBtable;";
+    $stmt = $dbPrev->prepare($select) or warn $DBI::errstr;
+    $rc = $stmt->execute($pic)  or warn $DBI::errstr;
+    ($timestamp, $rotate, $label, $location, $mtime, $prev_md5sum, $image) = $stmt->fetchrow_array;
+    if ($stmt->rows > 0) {
+	if ($md5sum eq $prev_md5sum) {
+	    $insert = "INSERT INTO $DBtable (filename, rotate, label, location, mtime, md5sum, image, timestamp) 
+	      VALUES( ?, ?, ?, ?, ?, ?, ?, ?);";
+	    $stmt = $db->prepare($insert) or warn $DBI::errstr;
+	    $stmt->bind_param(1, $pic, SQL_VARCHAR) or warn $DBI::errstr;
+	    $stmt->bind_param(2, $rotate, SQL_VARCHAR) or warn $DBI::errstr;
+	    $stmt->bind_param(3, $label, SQL_VARCHAR) or warn $DBI::errstr;
+	    $stmt->bind_param(4, $location, SQL_VARCHAR) or warn $DBI::errstr;
+	    $stmt->bind_param(5, $mtime, SQL_DOUBLE) or warn $DBI::errstr;
+	    $stmt->bind_param(6, $md5sum, SQL_VARCHAR) or warn $DBI::errstr;
+	    $stmt->bind_param(7, $image, SQL_BLOB) or warn $DBI::errstr;
+	    $stmt->bind_param(8, $timestamp, SQL_TYPE_TIMESTAMP) or warn $DBI::errstr;
+	    $stmt->execute()  or warn $DBI::errstr;
+	    next;
+	}
+    }
+    
+    @parts = split /\//, $pic;
+    splice(@parts, 0, 4); #remove /home/jim/pictures
+    ($name, $p)  = split /\./, $parts[$#parts];
+    pop @parts;           #remove file name
+    $outfile = join '_', @parts;
+    $outfile = $outfile . '_' . $name . ".jpg";
+    if ($ok{$outfile}) {
+	#qx(cp $outdir/done/$outfile $outdir/$outfile);
+	#next;
+    }
+    if ($cull{$outfile}) {
+	next;
+    }
+    $rotate = " ";
+    if ($flipLR{$outfile}) {
+	$rotate = " -flip ";
+    }
+    if ($flipUD{$outfile}) {
+	$rotate = " -rotate 180 ";
+    }
+    if ($l90{$outfile}) {
+	$rotate = " -rotate -90 ";
+    }
+    if ($r180{$outfile}) {
+	$rotate = " -rotate 180 ";
+    }
+    if ($r90{$outfile}) {
+	$rotate = " -rotate 90 ";
+    }
+    $info = ImageInfo($pic);
+    #    foreach $x (keys %$info) {
+    #        print "$x : $info->{$x}\n";
+    #        }
+
+    $label = "\n\n\n\n\n";
+    $location ="";
+    for ($j=0; $j<=$#parts; $j++) {
+	$p = $parts[$j];
+	next if $p =~ m/jpeg/;
+	next if $p =~ m/redeye/;
+	next if $p =~ m/a2bRotate/;
+	next if $p =~ m/all/;
+	next if $p =~ m/done/;
+	next if $p =~ m/cull/;
+	$label .= sprintf "$p\n";
+	$location .= sprintf ".$p";
+    }
+    $label .= sprintf "$name\n\n";
+    $time = "";
+    if ($info->{CreateDate}) {
+	$time = join "  ", split /\s+/, $info->{CreateDate};
+    }
+    if (!$time) {
+	$time = join "  ", split /\s+/, $info->{FileModifyDate};
+    }
+    if ($info->{GPSAltitude}) {
+	($height, $unit, $ref) = split /\s+/, $info->{GPSAltitude}, 3;
+	if ($unit eq "m") {
+	    $height = 3.28084 * $height;
+	    $height = int(0.5 + $height);
+	    $info->{GPSAltitude} = sprintf "%d %s %s", $height, "feet", $ref;
+	    $ref = "";
+	} else {
+	    print "GPSAltitude: $info->{GPSAltitude}\n";
+	}
+    }
+    $speed = 0;
+    if ($info->{GPSSpeed}) {
+	if ($info->{GPSSpeedRef} eq "km/h") {
+	    $speed = 0.621371 * $info->{GPSSpeed};
+	    $speed = sprintf "%.1f mph", $speed;
+	} else {
+	    print "GPSSpeedRef: $info->{GPSSpeedRef}\n";
+	}
+    }
+    $label .= sprintf "$time\n\n";
+    $label .= sprintf "ShutterSpeed: $info->{ShutterSpeed}\n" if$info->{ShutterSpeed};
+    $label .= sprintf "ISO: $info->{ISO}\n" if $info->{ISO};
+    $label .= sprintf "FocalLength: $info->{FocalLength}\n" if $info->{FocalLength};
+    $label .= sprintf "FocalLength(35mm): $info->{FocalLengthIn35mmFormat}\n" if $info->{FocalLengthIn35mmFormat};
+    $label .= sprintf "Aperture: $info->{Aperture}\n" if $info->{Aperture};
+    $label .= sprintf "ExposureProgram: $info->{ExposureProgram}\n" if $info->{ExposureProgram};
+    $label .= sprintf "Flash: $info->{Flash}\n" if $info->{Flash}; 
+    $label .= sprintf "ExposureCompensation: $info->{ExposureCompensation}\n" if $info->{ExposureCompensation};
+    $label .= sprintf "Metering Mode: $info->{MeteringMode}\n" if $info->{MeteringMode};
+    ($make, $x) = split /\s+/, $info->{Make} if $info->{Make};
+    $make = $make =~ m/PENTAX/ ? "" : $make . " " if $info->{Make};
+    $label .= sprintf "$make $info->{Model}\n";
+    $label .= sprintf "Lens: $info->{LensType}\n" if $info->{LensType};
+    $label .= sprintf "Latitude: $info->{GPSLatitude}\n" if $info->{GPSLatitude};
+    $label .= sprintf "Longitude: $info->{GPSLongitude}\n" if $info->{GPSLongitude};
+    $label .= sprintf "Altitude: $info->{GPSAltitude}\n" if $info->{GPSAltitude};
+    $label .= sprintf "Image Direction: %.0f deg\n", $info->{GPSImgDirection} if $info->{GPSImgDirection};
+    $label .= sprintf "Speed: $speed\n" if $speed;
+    $label .= sprintf "Direction: %.0f deg\n", $info->{GPSDestBearing} if $info->{GPSDestBearing} && $speed;
+    #print "$label";
+    $mtime = (stat($pic))[9];
+    $insert = "INSERT INTO $DBtable (filename, rotate, label, location, mtime, md5sum) 
+	      VALUES( ?, ?, ?, ?, ?, ?);";
+    $stmt = $db->prepare($insert) or warn $DBI::errstr;
+    $stmt->bind_param(1, $pic, SQL_VARCHAR) or warn $DBI::errstr;
+    $stmt->bind_param(2, $rotate, SQL_VARCHAR) or warn $DBI::errstr;
+    $stmt->bind_param(3, $label, SQL_VARCHAR) or warn $DBI::errstr;
+    $stmt->bind_param(4, $location, SQL_VARCHAR) or warn $DBI::errstr;
+    $stmt->bind_param(5, $mtime, SQL_DOUBLE) or warn $DBI::errstr;
+    $stmt->bind_param(6, $md5sum, SQL_VARCHAR) or warn $DBI::errstr;
+    $stmt->execute()  or warn $DBI::errstr;
+}
+unlink $DBold;
+rename $DBbase, $DBold;
+rename $DB, $DBbase;
+exit 0;
+
+
+$opt_s = $opt_d;
+$suffix=$n;
+
+sub my_rand {
+  my $mean = pop;
+  my $stddev = $mean/2;
+  my $r = 0;
+
+  do {
+     $r = $mean + $stddev * gaussian_rand();
+  } while ($r < 1);
+  return $r;
+}
+
+sub gaussian_rand {
+  my ($u1, $u2); # uniformly distributed random numbers
+  my $w;         # variance; then a weight
+  my ($g1, $g2); # gaussian-distributed numbers
+
+  do {
+     $u1 = 2 * rand() -1;
+     $u2 = 2 * rand() -1;
+     $w = $u1*$u1 + $u2*$u2;
+ } while ($w >=1 || $w == 0);
+
+  $w = sqrt( (-2 * log($w)) / $w);
+  $g2 = $u1 * $w;
+  $g1 = $u2 * $w;
+  # return both if wanted, else just one
+  return wantarray ? ($g1, $g2) : $g1;
+}
