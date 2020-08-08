@@ -44,6 +44,7 @@ while (<DIRS>) {
     next if $_ =~ m/test/;
     next if $_ =~ m/Test2/;
     next if $_ =~ m/Rotate/;
+    next if $_ =~ m/cull/;
     $dirlist[$i] = $_ . "/";
     $i++;
     }
