@@ -159,6 +159,8 @@ for ($i=0; $i<=$#nodups; $i++) {
     
     $pic = $nodups[$i];
     $md5sum = file_md5_hex($pic);
+    #$md5sum = "FORCE REBUILD2";
+    #$md5sum = time();
     $select = "SELECT timestamp, rotate, label, location, mtime, md5sum, image FROM $DBtable WHERE filename = ?";
     #$select = "SELECT COUNT(*) FROM $DBtable;";
     $stmt = $dbPrev->prepare($select) or warn $DBI::errstr;
@@ -179,6 +181,11 @@ for ($i=0; $i<=$#nodups; $i++) {
 	    $stmt->bind_param(8, $timestamp, SQL_TYPE_TIMESTAMP) or warn $DBI::errstr;
 	    $stmt->execute()  or warn $DBI::errstr;
 	    next;
+	} else {
+	    print "$prev_md5sum <> $md5sum for $pic\n";
+	    $delete = "DELETE FROM $DBtable WHERE filename = ?";
+	    $stmt = $dbPrev->prepare($delete) or warn $DBI::errstr;
+	    $rc = $stmt->execute($pic)  or warn $DBI::errstr;
 	}
     }
     
@@ -210,6 +217,9 @@ for ($i=0; $i<=$#nodups; $i++) {
     }
     if ($r90{$outfile}) {
 	$rotate = " -rotate 90 ";
+    }
+    if ($pic =~ m/Slides/) {
+	$rotate = " -flop";
     }
     $info = ImageInfo($pic);
     #    foreach $x (keys %$info) {
@@ -269,7 +279,7 @@ for ($i=0; $i<=$#nodups; $i++) {
     $label .= sprintf "Metering Mode: $info->{MeteringMode}\n" if $info->{MeteringMode};
     ($make, $x) = split /\s+/, $info->{Make} if $info->{Make};
     $make = $make =~ m/PENTAX/ ? "" : $make . " " if $info->{Make};
-    $label .= sprintf "$make $info->{Model}\n";
+    $label .= sprintf "$make $info->{Model}\n" if $info->{Model};
     $label .= sprintf "Lens: $info->{LensType}\n" if $info->{LensType};
     $label .= sprintf "Latitude: $info->{GPSLatitude}\n" if $info->{GPSLatitude};
     $label .= sprintf "Longitude: $info->{GPSLongitude}\n" if $info->{GPSLongitude};
