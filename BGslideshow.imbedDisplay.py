@@ -44,6 +44,7 @@ class Picture:
 
     def GetDB(self):
         restart = False
+        debug = False
         DBbase = '.'.join(self.DB.split('.')[0 : -1]) + '.'
         for suffix in self.DBmtime.keys():
             db = DBbase + suffix
@@ -51,7 +52,7 @@ class Picture:
                 self.DBmtime[suffix] = os.path.getmtime(db)
             else:
                 self.DBmtime[suffix] = 0
-            #print(DBbase + suffix, ':', self.DBmtime[suffix])
+            if debug: print(DBbase + suffix, ':', self.DBmtime[suffix])
         curDB = DBbase + 'sql'
         oldDB = curDB + '.old'
         newDB = curDB + '.new'
@@ -64,11 +65,11 @@ class Picture:
             if os.path.exists(oldDB):
                 command = 'rm ' + oldDB
                 command = 'mv ' + oldDB + '.gone'
-                doCmd(command)
+                doCmd(command, debug)
             command = ' '.join(['mv', curDB, oldDB])
-            doCmd(command)
+            doCmd(command, debug)
             command = ' '.join(['mv', newDB, curDB])
-            doCmd(command)
+            doCmd(command, debug)
         else:
             pass
         with open('/proc/' + str(os.getpid()) + '/cmdline', 'r') as cmdline:
@@ -295,10 +296,10 @@ class Power:
         #result = subprocess.run(command, shell = True, stdout = subprocess.PIPE, stderr=subprocess.STDOUT)
         #print(result.stdout.decode('utf-8'))
 
-def doCmd(command):
-    #print('doCmd:', command)
+def doCmd(command, debug = False):
+    if debug: print('doCmd:', command)
     result = subprocess.run(command, shell = True, stdout = subprocess.PIPE, stderr=subprocess.STDOUT)
-    #print(result.returncode, ':', result.stdout.decode('utf-8'))
+    if debug: print(result.returncode, ':', result.stdout.decode('utf-8'))
     return result.returncode
 
 def doCmdRetry(command, trys = 5, delay = 7):
