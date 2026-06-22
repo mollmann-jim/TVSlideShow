@@ -6,4 +6,4 @@ time  ./TVslide.image.copy.db
 cd /home/jim/tools/TVSlideShow/imbedImage
 time ./imbedImages.copy.py
 time ssh $PI /home/jim/bin/copy.DB
-
+# test
