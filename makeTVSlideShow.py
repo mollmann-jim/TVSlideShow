@@ -14,6 +14,7 @@ import sqlite3
 from pathlib import Path
 import itertools
 import re
+import pprint
 
 def adapt_datetime(dt):
     return dt.isoformat(sep=' ').replace('T', ' ')
@@ -30,9 +31,10 @@ class Pictures:
         sqlite3.register_converter("DATETIME", convert_datetime)
         self.db = sqlite3.connect(self.DB)
         self.c = self.db.cursor()
+        self.rotates = {}
+
 
     def getPictureFiles(self):
-        cntFilesInDir = {}
         filesInDir    = {}
         cull          = []
         flipLR        = []
@@ -50,26 +52,24 @@ class Pictures:
         image_paths = itertools.chain.from_iterable(picturesDir.rglob(ext) for ext in imageExt)
         for picture in image_paths:
             directory = str(picture.parent)[picDirLen:] + '/'
-            cntFilesInDir[directory] = cntFilesInDir.setdefault(directory, 0) + 1
             if directory not in filesInDir:
                 filesInDir[directory] = []
             filesInDir[directory].append(str(picture.name))
             #print('dir: ', directory, cntFilesInDir[directory], filesInDir[directory])
-        for dir in sorted(cntFilesInDir):
+        for dir in sorted(filesInDir):
             for remove in unwantedDirs:
                 if remove in dir:
-                    del cntFilesInDir[dir]
                     del filesInDir[dir]
                     #print('removed:', dir)
                     break
-        for dir in sorted(cntFilesInDir):   
+        for dir in sorted(filesInDir):   
             #print(f'{cntFilesInDir[dir]:6d} : {dir:s}')
             pass
         subDirs = []
-        for dir1 in sorted(cntFilesInDir):
+        for dir1 in sorted(filesInDir):
             if dir1 in subDirs:
                 continue
-            subDirDict = {k : v for k, v in cntFilesInDir.items() if k.startswith(dir1)}
+            subDirDict = {k : v for k, v in filesInDir.items() if k.startswith(dir1)}
             for dir2 in sorted(subDirDict):
                 if dir1 == dir2:
                     continue
@@ -77,34 +77,69 @@ class Pictures:
                 #print('dir1:', dir1, 'subdir:', dir2)
         #print('subDirs:', subDirs)
         for dir in subDirs:
-            del cntFilesInDir[dir]
             del filesInDir[dir]
-        '''
-        for dir in sorted(filesInDir):
-            for file in sorted(filesInDir[dir]):
-                print(dir + file)
-        '''
-        cull   = self.getRotates('Cull')
-        print('culls:', cull)
-        flipLR = self.getRotates('FlipLR')
-        print('flipLRs', flipLR)
-        flipUD = self.getRotates('FlipUD')
-        print('flipUDs:', flipUD)
-        L90    = self.getRotates('L90')
-        print('L90s:', L90)
-        R180   = self.getRotates('R180')
-        print('R180s:', R180)
-        R90    = self.getRotates('R90')
-        print('R90s:', R90)
-        
+            
+        return filesInDir
 
-    def getRotates(self, subDir):
-        rotates = []
+    def buildRotates(self):
+        dirs         = ['FlipLR', 'FlipUD', 'L90', 'R180', 'R90']
+        rotateOpts   = [' -flip ', ' -rotate 180 ', ' -rotate -90 ',
+                        ' -rotate 180 ', ' -rotate 90 ']
+        for subDir, option in zip(dirs, rotateOpts):
+            self.getRotates(subDir, option)
+        return self.rotates
+
+    def flopSlides(self, filesInDir):
+        slideDirDict = {k : v for k, v in filesInDir.items() if k.startswith('Slides')}
+        for slideDir in slideDirDict:
+            for file in slideDirDict[slideDir]:
+                #print('flopSlides:', slideDir, file)
+                self.rotates[slideDir + file] = ' -flop '
+        return self.rotates
+        
+        
+        
+    def getRotates(self, subDir, option):
         rotateBase = self.picRoot + 'Rotate/' + subDir
         rotPath = Path(rotateBase)
         for rot in rotPath.rglob('*'):
-            rotates.append(str(rot)[len(rotateBase) + 1 :])
-        return rotates
+            file = str(rot.name)
+            self.rotates[file] = option
+        return self.rotates
+
+    def countLabels(self, filesInDir):
+        fields = {}
+        for dir in sorted(filesInDir):
+            for file in filesInDir[dir]:
+                labelData = self.buildLabel(dir + file)
+                for meta in labelData:
+                    fields[meta] = 1 + fields.get(meta, 0)
+        for meta in sorted(fields):
+            print(f'{fields[meta]:6d} : {meta:s}')
+        return
+        
+                    
+    def buildLabels(self, filesInDir):
+        for dir in sorted(filesInDir):
+            for file in filesInDir[dir]:
+                labelData = self.buildLabel(dir + file)
+                   
+    def buildLabel(self, file):
+        self.pp = pprint.PrettyPrinter(indent=4, sort_dicts=False)
+        cmd = 'identify -verbose "' + self.picRoot + file + '"'
+        result = doCmd(cmd)
+        kv_regex = re.compile(r"^\s+([\w\s]+):\s*(.*)$")
+        metadata = {}
+        for line in result.stdout.splitlines():
+            match = kv_regex.match(line.decode('utf-8'))
+            if match:
+                # clean up keys and store values
+                key = match.group(1).strip().lower().replace(" ", "_")
+                value = match.group(2).strip()
+                metadata[key] = value
+        return metadata
+        #self.pp.pprint(metadata)
+            
             
         
 class Images:
@@ -195,10 +230,31 @@ class Images:
                     size = test_file.write(testimage)
                 doCmd('display ' + test_out)
 
+        
+def doCmd(command, printFailure = True, debug = False):
+    if debug:
+        print('doCmd:command:', command)
+    result = subprocess.run(command, shell = True, stdout = subprocess.PIPE, \
+                            stderr=subprocess.STDOUT, check = False)
+    if debug:
+        if result.stdout is not None:
+            print('stdout:' + '\n' + result.stdout.decode('utf-8'))
+        if result.stderr is not None:
+            print('stderr:' + '\n' + result.stderr.decode('utf-8'))
 
-def doCmd(command):
+    if result.returncode != 0 & printFailure:
+        #print(result.stdout)
+        print('Failed: RC:', result.returncode, command)
+        print(result.stderr)
+    if debug:
+        print('doCmd:result:', result)
+    return result
+                  
+
+def doCmdOrg(command):
     #print('doCmd:', command)
-    result = subprocess.run(command, shell = True, stdout = subprocess.PIPE, stderr=subprocess.STDOUT)
+    result = subprocess.run(command, shell = True, stdout = subprocess.PIPE,
+                            stderr=subprocess.STDOUT, check = False)
     #print(result.returncode, ':', result.stdout.decode('utf-8'))
     return result.returncode
 
@@ -213,7 +269,12 @@ def doCmdRetry(command, trys = 5, delay = 7):
     
 def main():
     pictures = Pictures()
-    pictures.getPictureFiles()
+    picList  = pictures.getPictureFiles()
+    rotates  = pictures.buildRotates()
+    rotates  = pictures.flopSlides(picList)
+    pictures.countLabels(picList)
+    #pprint.pprint(rotates)
+    #pictures.buildLabel('2026.06.21.All.iPhone/Yau Ma Tei, March 7, 2026/IMG_9277.jpeg')
 
     '''
     images = Images()
