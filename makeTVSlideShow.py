@@ -25,25 +25,11 @@ def convert_datetime(val):
 
 class Pictures:
     def __init__(self):
-        self.picRoot = '/home/jim/pictures/'
-        self.DB = '/home/jim/tools/TVSlideShow.py/TVSlides.sql'
-        self.DBtable = 'pictures'
-        sqlite3.register_adapter(dt.datetime, adapt_datetime)
-        sqlite3.register_converter("DATETIME", convert_datetime)
-        self.db = sqlite3.connect(self.DB)
-        self.c = self.db.cursor()
-        self.rotates = {}
-
+        self.picRoot       = '/home/jim/pictures/'
+        self.rotates       = {}
+        self.filesInDir    = {}
 
     def getPictureFiles(self):
-        filesInDir    = {}
-        cull          = []
-        flipLR        = []
-        flipUD        = []
-        L90           = []
-        R180          = []
-        R90           = []
-        i = 0
         imageExt = ['*jpg', '*.jpeg', '*pef', '*tif', '*gif',
                     '*JPG', '*.JPEG', '*PEF', '*TIF', '*GIF']
         unwantedDirs = ['xvpics', 'allergy', '4sale', 'small', 'images',
@@ -53,34 +39,38 @@ class Pictures:
         image_paths = itertools.chain.from_iterable(picturesDir.rglob(ext) for ext in imageExt)
         for picture in image_paths:
             directory = str(picture.parent)[picDirLen:] + '/'
-            if directory not in filesInDir:
-                filesInDir[directory] = []
-            filesInDir[directory].append(str(picture.name))
-            #print('dir: ', directory, cntFilesInDir[directory], filesInDir[directory])
-        for dir in sorted(filesInDir):
+            if directory not in self.filesInDir:
+                self.filesInDir[directory] = []
+            self.filesInDir[directory].append(str(picture.name))
+        for dir in sorted(self.filesInDir):
             for remove in unwantedDirs:
                 if remove in dir:
-                    del filesInDir[dir]
-                    #print('removed:', dir)
+                    del self.filesInDir[dir]
                     break
-        for dir in sorted(filesInDir):   
-            #print(f'{cntFilesInDir[dir]:6d} : {dir:s}')
-            pass
         subDirs = []
-        for dir1 in sorted(filesInDir):
+        for dir1 in sorted(self.filesInDir):
             if dir1 in subDirs:
                 continue
-            subDirDict = {k : v for k, v in filesInDir.items() if k.startswith(dir1)}
+            subDirDict = {k : v for k, v in self.filesInDir.items() if k.startswith(dir1)}
             for dir2 in sorted(subDirDict):
                 if dir1 == dir2:
                     continue
                 subDirs.append(dir2)
-                #print('dir1:', dir1, 'subdir:', dir2)
-        #print('subDirs:', subDirs)
         for dir in subDirs:
-            del filesInDir[dir]
+            del self.filesInDir[dir]
             
-        return filesInDir
+        return self.filesInDir
+
+    def getRotate(self, filename):
+        if len(self.rotates) == 0:
+            self.buildRotates()
+            self.flopSlides()
+        basename = filename.split('/')[-1]
+        if self.rotates.get(basename, False):
+            print('rotate', basename, filename, self.rotates[basename])
+            return self.rotates[basename]
+        else:
+            return ''
 
     def buildRotates(self):
         dirs         = ['FlipLR', 'FlipUD', 'L90', 'R180', 'R90']
@@ -88,28 +78,24 @@ class Pictures:
                         ' -rotate 180 ', ' -rotate 90 ']
         for subDir, option in zip(dirs, rotateOpts):
             self.getRotates(subDir, option)
-        return self.rotates
 
-    def flopSlides(self, filesInDir):
-        slideDirDict = {k : v for k, v in filesInDir.items() if k.startswith('Slides')}
-        for slideDir in slideDirDict:
-            for file in slideDirDict[slideDir]:
-                #print('flopSlides:', slideDir, file)
-                self.rotates[slideDir + file] = ' -flop '
-        return self.rotates
-        
     def getRotates(self, subDir, option):
         rotateBase = self.picRoot + 'Rotate/' + subDir
         rotPath = Path(rotateBase)
         for rot in rotPath.rglob('*'):
             file = str(rot.name)
             self.rotates[file] = option
-        return self.rotates
 
-    def countLabels(self, filesInDir):
+    def flopSlides(self):
+        slideDirDict = {k : v for k, v in self.filesInDir.items() if k.startswith('Slides')}
+        for slideDir in slideDirDict:
+            for file in slideDirDict[slideDir]:
+                self.rotates[slideDir + file] = ' -flop '
+        
+    def countLabels(self):
         fields = {}
-        for dir in sorted(filesInDir):
-            for file in filesInDir[dir]:
+        for dir in sorted(self.filesInDir):
+            for file in self.filesInDir[dir]:
                 labelData = self.getLabelData(dir + file)
                 for meta in labelData:
                     fields[meta] = 1 + fields.get(meta, 0)
@@ -119,11 +105,16 @@ class Pictures:
                     
     def buildLabels(self, filesInDir):
         labels = {}
-        for dir in sorted(filesInDir):
-            for file in filesInDir[dir]:
+        for dir in sorted(self.filesInDir):
+            for file in self.filesInDir[dir]:
                 labelData = self.getLabelData(dir + file)
                 labels[dir + file] = self.composeLabel(dir + file, labelData)
-                   
+
+    def getLabel(self, file):
+        meta = self.getLabelData(file)
+        label = self.composeLabel(file, meta)
+        return label
+
     def getLabelData(self, file):
         self.pp = pprint.PrettyPrinter(indent=4, sort_dicts=False)
         cmd = 'identify -verbose "' + self.picRoot + file + '"'
@@ -131,7 +122,8 @@ class Pictures:
         kv_regex = re.compile(r"^\s+([\w\s]+):\s*(.*)$")
         metadata = {}
         for line in result.stdout.splitlines():
-            line = line.decode('utf-8').replace('date:', '').replace('exif:', '').replace('jpeg:', '')
+            line = line.decode('utf-8').replace('date:', '')
+            line = line.replace('exif:', '').replace('jpeg:', '')
             match = kv_regex.match(line)
             if match:
                 # clean up keys and store values
@@ -139,20 +131,29 @@ class Pictures:
                 value = match.group(2).strip()
                 metadata[key] = value
         return metadata
-        #self.pp.pprint(metadata)
 
     def composeLabel(self, filename, metadata):
         label = '\n\n\n\n\n\n\n'
         label += filename.replace('/', '\n') +'\n\n\n'
-        time = None
-        if metadata.get('createdate', False):
-            time = metadata['createdate']
-        elif  metadata.get('filemodifydate', False):
-            time = metadata['filemodifydate']
+        birthday = time = None
+        if metadata.get('datetime', False):
+            time     = metadata['datetime']
+            birthday = dt.datetime.strptime(time, '%Y:%m:%d %H:%M:%S')
+        elif metadata.get('modify', False):
+            time     = metadata['modify']
+            birthday = dt.datetime.strptime(time, '%Y-%m-%dT%H:%M:%S+00:00')
+        elif metadata.get('createdate', False):
+            time     = metadata['createdate']
+            birthday = 'createdate' + metadata['createdate']
+        elif metadata.get('filemodifydate', False):
+            time     = metadata['filemodifydate']
+            birthday = 'filemodifydate' + metadata['filemodifydate']
         else:
-            time = metadata.get('datetime', None)
+            print(filename, 'needs birthday')
+            pprint.pprint(metadata)
         if time is not None:
             label += time + '\n\n'
+
         if metadata.get('shutterspeedvalue', False):
             ss = float(Fraction(metadata['shutterspeedvalue']))
             label += f'ShutterSpeed: {ss:7.4f}\n'
@@ -186,13 +187,43 @@ class Pictures:
             ref = metadata.get('gpslongituderef', '')
             label += f'Longitude: {long[0]:4.0f} {long[1]:3.0f}\' {long[2]:4.1f}" {ref:s}\n'
         if metadata.get('gpsaltitude', False):
-            alt= float(Fraction(metadata['gpsaltitude']))
+            alt = float(Fraction(metadata['gpsaltitude']))
             label += f'Altitude: {alt:5.1f} m   {alt * 3.28084:5.1f} \'\n'
+        if metadata.get('gpsimgdirection', False):
+            dir = float(Fraction(metadata['gpsimgdirection']))
+            label += f'Image Direction: {dir:4.0f} deg\n'
+        if metadata.get('gpsdestbearinggpsimg', False):
+            dir = float(Fraction(metadata['gpsdestbearing']))
+            label += f'Bearing: {dir:4.0f} deg\n'
+        if metadata.get('gpsspeed', False):
+            spd = float(Fraction(metadata['gpsspeed']))
+            label += f'Speed {spd:4.0f} m/s  {spd:4.0f} mph\n'    
+        return label, birthday
 
-            
-        print(label)
-        
-        
+class buildImageDB:
+    def __init__(self):
+        self.picRoot = '/home/jim/pictures/'
+        self.DB = '/home/jim/tools/TVSlideShow.py/TVSlides.sql'
+        self.DBtable = 'pictures'
+        sqlite3.register_adapter(dt.datetime, adapt_datetime)
+        sqlite3.register_converter("DATETIME", convert_datetime)
+        self.db = sqlite3.connect(self.DB, detect_types=sqlite3.PARSE_DECLTYPES)
+        self.c = self.db.cursor()
+        self.initDB()
+
+    def initDB(self):
+        create = 'CREATE TABLE IF NOT EXISTS ' + self.DBtable + ' ( \n' +\
+            'filename       TEXT PRIMARY KEY,                       \n' +\
+            'timestamp      INTEGER DEFAULT CURRENT_TIMESTAMP,      \n' +\
+            'rotate         TEXT DEFAULT NULL,                      \n' +\
+            'inode          INTEGER,                                \n' +\
+            'md5sum         TEXT,                                   \n' +\
+            'birthday       INTEGER,                                \n' +\
+            'image          BLOB DEFAULT NULL                       \n' +\
+            ');'
+        self.c.execute(create)
+
+
 class Images:
     def __init__(self):
         self.directory = '/home/jim/tools/TVSlideShow.py/'
@@ -321,14 +352,34 @@ def doCmdRetry(command, trys = 5, delay = 7):
 def main():
     pictures = Pictures()
     picList  = pictures.getPictureFiles()
-    rotates  = pictures.buildRotates()
-    rotates  = pictures.flopSlides(picList)
+    #rotates  = pictures.buildRotates()
+    #rotates  = pictures.flopSlides(picList)
+    '''
     #pictures.countLabels(picList)
     #pprint.pprint(rotates)
-    meta = pictures.getLabelData('2026.06.21.All.iPhone/Yau Ma Tei, March 7, 2026/IMG_9277.jpeg')
-    pprint.pprint(meta)
-    label = pictures.composeLabel('2026.06.21.All.iPhone/Yau Ma Tei, March 7, 2026/IMG_9277.jpeg',
-                                  meta)
+    
+    '''
+    rotate = pictures.getRotate('/home/jim/pictures/Rotate/R90/2004.Athens-Barcelona_Florence.Livorno.Italy_PA310134.jpg')
+
+    z= rotate / 0
+
+    build    = buildImageDB()
+    i = -1
+    skip = 999999
+    skip = 1
+    for dir in sorted(picList):
+        for file in sorted(picList[dir]):
+            i += 1
+            if i % skip != 0:
+                continue
+            filename = dir + file
+            #print(f'{i:6d} : {filename:s}')
+            #### label, bday = pictures.getLabel(filename)
+            rotate = pictures.getRotate(filename)
+            #print(bday)
+            #print(label)
+
+    
 
     '''
     images = Images()
