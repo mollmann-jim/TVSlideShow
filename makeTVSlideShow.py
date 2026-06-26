@@ -99,6 +99,8 @@ class Pictures:
         for dir in sorted(self.filesInDir):
             for file in self.filesInDir[dir]:
                 labelData = self.getLabelData(dir + file)
+                print('\n' + dir + file)
+                pprint.pprint(labelData)
                 for meta in labelData:
                     fields[meta] = 1 + fields.get(meta, 0)
         for meta in sorted(fields):
@@ -131,7 +133,14 @@ class Pictures:
                 # clean up keys and store values
                 key = match.group(1).strip().lower().replace(" ", "_")
                 value = match.group(2).strip()
-                metadata[key] = value
+                try:
+                    metadata[key] = value
+                except:
+                    print('getLabelData: file:  ', file)
+                    print('getLabelData: line:  ', line)
+                    print('getLabelData: key:   ', key)
+                    print('getLabelData: value: ', value)
+                    
         return metadata
 
     def composeLabel(self, filename, metadata):
@@ -356,6 +365,7 @@ def main():
     picList  = pictures.getPictureFiles()
     #rotates  = pictures.buildRotates()
     #rotates  = pictures.flopSlides(picList)
+    pictures.countLabels()
     '''
     #pictures.countLabels(picList)
     #pprint.pprint(rotates)
