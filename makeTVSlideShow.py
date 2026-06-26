@@ -65,7 +65,9 @@ class Pictures:
         if len(self.rotates) == 0:
             self.buildRotates()
             self.flopSlides()
+        #pprint.pprint(self.rotates)
         basename = filename.split('/')[-1]
+        basename = filename
         if self.rotates.get(basename, False):
             print('rotate', basename, filename, self.rotates[basename])
             return self.rotates[basename]
@@ -83,7 +85,7 @@ class Pictures:
         rotateBase = self.picRoot + 'Rotate/' + subDir
         rotPath = Path(rotateBase)
         for rot in rotPath.rglob('*'):
-            file = str(rot.name)
+            file = str(rot.name).replace('_', '/')
             self.rotates[file] = option
 
     def flopSlides(self):
@@ -359,10 +361,8 @@ def main():
     #pprint.pprint(rotates)
     
     '''
-    rotate = pictures.getRotate('/home/jim/pictures/Rotate/R90/2004.Athens-Barcelona_Florence.Livorno.Italy_PA310134.jpg')
-
-    z= rotate / 0
-
+    #rotate = pictures.getRotate('2004.10.Athens-Barcelona/Florence.Livorno.Italy/PA310134.JPG')
+    #z = rotate /0
     build    = buildImageDB()
     i = -1
     skip = 999999
