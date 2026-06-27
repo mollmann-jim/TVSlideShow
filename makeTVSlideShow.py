@@ -28,6 +28,8 @@ class Pictures:
         self.picRoot       = '/home/jim/pictures/'
         self.rotates       = {}
         self.filesInDir    = {}
+        self.debugRotates  = {}
+        self.dbgRotatesCpy = {}
 
     def getPictureFiles(self):
         imageExt = ['*jpg', '*.jpeg', '*pef', '*tif', '*gif',
@@ -36,7 +38,8 @@ class Pictures:
                         'Jaye', 'test', 'Test2', 'Rotate', 'cull']
         picDirLen = len(self.picRoot)
         picturesDir = Path(self.picRoot)
-        image_paths = itertools.chain.from_iterable(picturesDir.rglob(ext) for ext in imageExt)
+        image_paths = itertools.chain.from_iterable(picturesDir.rglob(ext) \
+                                                    for ext in imageExt)
         for picture in image_paths:
             directory = str(picture.parent)[picDirLen:] + '/'
             if directory not in self.filesInDir:
@@ -51,27 +54,53 @@ class Pictures:
         for dir1 in sorted(self.filesInDir):
             if dir1 in subDirs:
                 continue
-            subDirDict = {k : v for k, v in self.filesInDir.items() if k.startswith(dir1)}
+            subDirDict = {k : v for k, v in self.filesInDir.items() \
+                          if k.startswith(dir1)}
             for dir2 in sorted(subDirDict):
                 if dir1 == dir2:
                     continue
                 subDirs.append(dir2)
         for dir in subDirs:
             del self.filesInDir[dir]
-            
         return self.filesInDir
+
+    def setupDebugRotate(self):
+        print('self.rotates:start:', len(self.rotates),
+              'self.dbgRotatesCpy:', len(self.dbgRotatesCpy))
+        self.dbgRotatesCpy = self.rotates.copy()
+        for subDir, option in zip(['Cull', 'OK'], ['Cull', 'OK']):
+            self.getRotates(subDir, option, self.dbgRotatesCpy)
+        for fullname in self.dbgRotatesCpy:
+            filename = fullname.split('/')[-1].lower()
+            if filename not in self.debugRotates:
+                self.debugRotates[filename] = []
+            self.debugRotates[filename].append(fullname)
+
+    def debugRotate(self, fullname):
+        filename = fullname.split('/')[-1].lower()
+        if self.debugRotates.get(filename, False):
+            for rot in self.debugRotates[filename]:
+                if rot == fullname:
+                    print('debugRotate: match:', rot,
+                          self.dbgRotatesCpy[fullname])
+                else:
+                    print('debugRotate:', fullname,
+                          ' possible match:',rot,
+                          self.dbgRotatesCpy[rot])
+        else:
+            print('debugRotate: no possible rotates:', fullname)
+            pass
 
     def getRotate(self, filename):
         if len(self.rotates) == 0:
             self.buildRotates()
             self.flopSlides()
-        #pprint.pprint(self.rotates)
-        basename = filename.split('/')[-1]
-        basename = filename
-        if self.rotates.get(basename, False):
-            print('rotate', basename, filename, self.rotates[basename])
-            return self.rotates[basename]
+            self.setupDebugRotate()
+        if self.rotates.get(filename, False):
+            print('rotate', filename, self.rotates[filename])
+            return self.rotates[filename]
         else:
+            self.debugRotate(filename)
             return ''
 
     def buildRotates(self):
@@ -79,21 +108,28 @@ class Pictures:
         rotateOpts   = [' -flip ', ' -rotate 180 ', ' -rotate -90 ',
                         ' -rotate 180 ', ' -rotate 90 ']
         for subDir, option in zip(dirs, rotateOpts):
-            self.getRotates(subDir, option)
+            self.getRotates(subDir, option, self.rotates)
+            print('buildRotates:', subDir, len(self.rotates))
 
-    def getRotates(self, subDir, option):
+    def getRotates(self, subDir, option, rotatesDict):
         rotateBase = self.picRoot + 'Rotate/' + subDir
         rotPath = Path(rotateBase)
+        i = 0
         for rot in rotPath.rglob('*'):
             file = str(rot.name).replace('_', '/')
-            self.rotates[file] = option
+            rotatesDict[file] = option
+            i += 1
+        print('getRotates:', subDir, ' - ', i, len(rotatesDict))
 
     def flopSlides(self):
         slideDirDict = {k : v for k, v in self.filesInDir.items() if k.startswith('Slides')}
+        i = 0
         for slideDir in slideDirDict:
             for file in slideDirDict[slideDir]:
                 self.rotates[slideDir + file] = ' -flop '
-        
+                i += 1
+        print('flopSlides:', i, len(self.rotates))
+
     def countLabels(self):
         fields = {}
         for dir in sorted(self.filesInDir):
@@ -126,21 +162,24 @@ class Pictures:
         kv_regex = re.compile(r"^\s+([\w\s]+):\s*(.*)$")
         metadata = {}
         for line in result.stdout.splitlines():
-            line = line.decode('utf-8').replace('date:', '')
-            line = line.replace('exif:', '').replace('jpeg:', '')
+            try:
+                line = line.decode('utf-8').replace('date:', '')
+                line = line.replace('exif:', '').replace('jpeg:', '')
+            except Exception as e:
+                lineHex = line.hex(' ', bytes_per_sep = -4)
+                print(f'Skipping file {file:s}')
+                print(f'line(hex): {lineHex:s}')
+                print(f' due to error: {e}')
+                for word in lineHex.split():
+                    char = bytes.fromhex(word)
+                    print(word, ' : ', char)
+                continue
             match = kv_regex.match(line)
             if match:
                 # clean up keys and store values
                 key = match.group(1).strip().lower().replace(" ", "_")
                 value = match.group(2).strip()
-                try:
-                    metadata[key] = value
-                except:
-                    print('getLabelData: file:  ', file)
-                    print('getLabelData: line:  ', line)
-                    print('getLabelData: key:   ', key)
-                    print('getLabelData: value: ', value)
-                    
+                metadata[key] = value
         return metadata
 
     def composeLabel(self, filename, metadata):
@@ -362,17 +401,10 @@ def doCmdRetry(command, trys = 5, delay = 7):
     
 def main():
     pictures = Pictures()
+    #pictures.picRoot = '/home/jim/pictures/Edgecliff/Edgecliff friends/'
     picList  = pictures.getPictureFiles()
-    #rotates  = pictures.buildRotates()
-    #rotates  = pictures.flopSlides(picList)
-    pictures.countLabels()
-    '''
-    #pictures.countLabels(picList)
-    #pprint.pprint(rotates)
+    #pictures.countLabels()
     
-    '''
-    #rotate = pictures.getRotate('2004.10.Athens-Barcelona/Florence.Livorno.Italy/PA310134.JPG')
-    #z = rotate /0
     build    = buildImageDB()
     i = -1
     skip = 999999
@@ -384,7 +416,8 @@ def main():
                 continue
             filename = dir + file
             #print(f'{i:6d} : {filename:s}')
-            #### label, bday = pictures.getLabel(filename)
+            if False: # testing
+                label, bday = pictures.getLabel(filename)
             rotate = pictures.getRotate(filename)
             #print(bday)
             #print(label)
