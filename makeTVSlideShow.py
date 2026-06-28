@@ -25,12 +25,13 @@ def convert_datetime(val):
 
 class Pictures:
     def __init__(self, pictureRoot, debug):
-        self.debug         = debug
-        self.picRoot       = pictureRoot
-        self.rotates       = {}
-        self.filesInDir    = {}
-        self.debugRotates  = {}
-        self.dbgRotatesCpy = {}
+        self.debug           = debug
+        self.debugRotateMsgs = False
+        self.picRoot         = pictureRoot
+        self.rotates         = {}
+        self.filesInDir      = {}
+        self.debugRotates    = {}
+        self.dbgRotatesCpy   = {}
 
     def getPictureFiles(self):
         imageExt = ['*jpg', '*.jpeg', '*pef', '*tif', '*gif',
@@ -86,8 +87,9 @@ class Pictures:
                       ' directory not found in self.filesInDir')
 
     def setupDebugRotate(self):
-        print('self.rotates:start:', len(self.rotates),
-              'self.dbgRotatesCpy:', len(self.dbgRotatesCpy))
+        if  self.debugRotateMsgs:
+            print('self.rotates:start:', len(self.rotates),
+                  'self.dbgRotatesCpy:', len(self.dbgRotatesCpy))
         self.dbgRotatesCpy = self.rotates.copy()
         for subDir, option in zip(['Cull', 'OK'], ['Cull', 'OK']):
             self.getRotates(subDir, option, self.dbgRotatesCpy)
@@ -102,15 +104,16 @@ class Pictures:
         if self.debugRotates.get(filename, False):
             for rot in self.debugRotates[filename]:
                 if rot == fullname:
-                    print('debugRotate: match:', rot,
-                          self.dbgRotatesCpy[fullname])
+                    if  self.debugRotateMsgs:
+                        print('debugRotate: match:', rot,
+                              self.dbgRotatesCpy[fullname])
                 else:
                     print('debugRotate:', fullname,
                           ' possible match:', rot,
                           self.dbgRotatesCpy[rot])
         else:
-            print('debugRotate: no possible rotates:', fullname)
-            pass
+            if  self.debugRotateMsgs:
+                print('debugRotate: no possible rotates:', fullname)
 
     def getRotate(self, filename):
         if len(self.rotates) == 0:
@@ -298,6 +301,9 @@ class buildImageDB:
             ' );'
         self.c.execute(create)
 
+    def addPicture(self, filename, rotate, label, bday):
+        print('addPicture:', filename, rotate, bday)
+
 
 class Images:
     def __init__(self):
@@ -443,9 +449,9 @@ def main():
                 continue
             filename = dir + file
             #print(f'{i:6d} : {filename:s}')
-            if False: # testing
-                label, bday = pictures.getLabel(filename)
+            label, bday = pictures.getLabel(filename)
             rotate = pictures.getRotate(filename)
+            build.addPicture(filename, rotate, label, bday)
             #print(bday)
             #print(label)
 
