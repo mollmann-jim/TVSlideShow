@@ -16,6 +16,7 @@ import itertools
 import re
 import pprint
 from fractions import Fraction
+import hashlib
 
 def adapt_datetime(dt):
     return dt.isoformat(sep=' ').replace('T', ' ')
@@ -297,12 +298,27 @@ class buildImageDB:
             ' md5sum         TEXT,                                   \n' +\
             ' birthday       INTEGER,                                \n' +\
             ' filesize       INTEGER,                                \n' +\
+            ' label          TEXT,                                   \n' +\
             ' image          BLOB DEFAULT NULL                       \n' +\
             ' );'
         self.c.execute(create)
 
     def addPicture(self, filename, rotate, label, bday):
+        insert = 'INSERT OR REPLACE INTO ' + self.DBtable + ' ( \n'    \
+            ' filename, rotate, inode, md5sum, birthday, filesize, \n' \
+            ' label, image) VALUES(?, ?, ?, ?, ?, ?, ?, ?);'
         print('addPicture:', filename, rotate, bday)
+        fullname = self.picRoot + filename
+        stat = os.stat(fullname)
+        md5sum = hashlib.md5(open(fullname, "rb").read()).hexdigest()
+        print('addPicture:', filename, rotate, bday, stat.st_ino,
+              stat.st_size, md5sum, rotate)
+        values = [filename, rotate, stat.st_ino, md5sum, bday,
+                  stat.st_size, label, None]
+        self.c.execute(insert, values)
+        self.db.commit()
+        
+
 
 
 class Images:
