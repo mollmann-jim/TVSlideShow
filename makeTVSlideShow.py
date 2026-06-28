@@ -62,7 +62,27 @@ class Pictures:
                 subDirs.append(dir2)
         for dir in subDirs:
             del self.filesInDir[dir]
+        print('getPictureFiles: len(self.filesInDir):', len(self.filesInDir))
+        self.cullFiles()
+        print('getPictureFiles: len(self.filesInDir):', len(self.filesInDir))
         return self.filesInDir
+
+    def cullFiles(self):
+        culls = {}
+        self.getRotates('Cull', 'cull', culls)
+        #pprint.pprint(culls)
+        for cull in culls:
+            cullPath = Path(cull)
+            cullDir  = str(cullPath.parent) + '/'
+            cullFile = str(cullPath.name)
+            if self.filesInDir.get(cullDir, False):
+                if cullFile in self.filesInDir[cullDir]:
+                    self.filesInDir[cullDir].remove(cullFile)
+                else:
+                    print(cullFile, ' not in ', cullDir)
+            else:
+                print(cullDir + cullFile,
+                      ' directory not found in self.filesInDir')
 
     def setupDebugRotate(self):
         print('self.rotates:start:', len(self.rotates),
@@ -85,7 +105,7 @@ class Pictures:
                           self.dbgRotatesCpy[fullname])
                 else:
                     print('debugRotate:', fullname,
-                          ' possible match:',rot,
+                          ' possible match:', rot,
                           self.dbgRotatesCpy[rot])
         else:
             print('debugRotate: no possible rotates:', fullname)
@@ -408,7 +428,7 @@ def main():
     build    = buildImageDB()
     i = -1
     skip = 999999
-    skip = 1
+    skip = 10000
     for dir in sorted(picList):
         for file in sorted(picList[dir]):
             i += 1
