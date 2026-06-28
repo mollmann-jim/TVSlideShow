@@ -24,8 +24,9 @@ def convert_datetime(val):
     return dt.datetime.fromisoformat(val)
 
 class Pictures:
-    def __init__(self):
-        self.picRoot       = '/home/jim/pictures/'
+    def __init__(self, pictureRoot, debug):
+        self.debug         = debug
+        self.picRoot       = pictureRoot
         self.rotates       = {}
         self.filesInDir    = {}
         self.debugRotates  = {}
@@ -223,7 +224,6 @@ class Pictures:
             pprint.pprint(metadata)
         if time is not None:
             label += time + '\n\n'
-
         if metadata.get('shutterspeedvalue', False):
             ss = float(Fraction(metadata['shutterspeedvalue']))
             label += f'ShutterSpeed: {ss:7.4f}\n'
@@ -271,9 +271,10 @@ class Pictures:
         return label, birthday
 
 class buildImageDB:
-    def __init__(self):
+    def __init__(self, pictureRoot, debug):
+        self.debug   = debug
         self.picRoot = '/home/jim/pictures/'
-        self.DB = '/home/jim/tools/TVSlideShow.py/TVSlides.sql'
+        self.DB      = '/home/jim/tools/TVSlideShow.py/TVSlides.sql'
         self.DBtable = 'pictures'
         sqlite3.register_adapter(dt.datetime, adapt_datetime)
         sqlite3.register_converter("DATETIME", convert_datetime)
@@ -282,15 +283,19 @@ class buildImageDB:
         self.initDB()
 
     def initDB(self):
+        if self.debug:
+            drop = 'DROP TABLE IF EXISTS ' + self.DBtable + ';'
+            self.c.execute(drop)
         create = 'CREATE TABLE IF NOT EXISTS ' + self.DBtable + ' ( \n' +\
-            'filename       TEXT PRIMARY KEY,                       \n' +\
-            'timestamp      INTEGER DEFAULT CURRENT_TIMESTAMP,      \n' +\
-            'rotate         TEXT DEFAULT NULL,                      \n' +\
-            'inode          INTEGER,                                \n' +\
-            'md5sum         TEXT,                                   \n' +\
-            'birthday       INTEGER,                                \n' +\
-            'image          BLOB DEFAULT NULL                       \n' +\
-            ');'
+            ' filename       TEXT PRIMARY KEY,                       \n' +\
+            ' timestamp      INTEGER DEFAULT CURRENT_TIMESTAMP,      \n' +\
+            ' rotate         TEXT DEFAULT NULL,                      \n' +\
+            ' inode          INTEGER,                                \n' +\
+            ' md5sum         TEXT,                                   \n' +\
+            ' birthday       INTEGER,                                \n' +\
+            ' filesize       INTEGER,                                \n' +\
+            ' image          BLOB DEFAULT NULL                       \n' +\
+            ' );'
         self.c.execute(create)
 
 
@@ -420,12 +425,14 @@ def doCmdRetry(command, trys = 5, delay = 7):
             time.sleep(delay)
     
 def main():
-    pictures = Pictures()
+    debug       = True
+    pictureRoot = '/home/jim/pictures/'
+    pictures = Pictures(pictureRoot, debug)
     #pictures.picRoot = '/home/jim/pictures/Edgecliff/Edgecliff friends/'
     picList  = pictures.getPictureFiles()
     #pictures.countLabels()
     
-    build    = buildImageDB()
+    build    = buildImageDB(pictureRoot, debug)
     i = -1
     skip = 999999
     skip = 10000
