@@ -35,8 +35,8 @@ class Pictures:
         self.dbgRotatesCpy   = {}
 
     def getPictureFiles(self):
-        imageExt = ['*jpg', '*.jpeg', '*pef', '*tif', '*gif',
-                    '*JPG', '*.JPEG', '*PEF', '*TIF', '*GIF']
+        imageExt = ['*jpg', '*jpeg', '*pef', '*tif', '*gif', '*bmp', '*png', '*heic',
+                    '*JPG', '*JPEG', '*PEF', '*TIF', '*GIF', '*BMP', '*PNG', '*HEIC']
         unwantedDirs = ['xvpics', 'allergy', '4sale', 'small', 'images',
                         'Jaye', 'test', 'Test2', 'Rotate', 'cull']
         picDirLen = len(self.picRoot)
@@ -48,11 +48,20 @@ class Pictures:
             if directory not in self.filesInDir:
                 self.filesInDir[directory] = []
             self.filesInDir[directory].append(str(picture.name))
+        if self.debug:
+            dirs, files = self.countFiles()
+            print('getPictureFiles:', dirs, ' directories',
+                  files, ' files in filesInDir after initial scan')
+
         for dir in sorted(self.filesInDir):
             for remove in unwantedDirs:
                 if remove in dir:
                     del self.filesInDir[dir]
                     break
+        if self.debug:
+            dirs, files = self.countFiles()
+            print('getPictureFiles:', dirs, ' directories',
+                  files, ' in filesInDir after remove unwanted', files)
         subDirs = []
         for dir1 in sorted(self.filesInDir):
             if dir1 in subDirs:
@@ -65,10 +74,20 @@ class Pictures:
                 subDirs.append(dir2)
         for dir in subDirs:
             del self.filesInDir[dir]
-        print('getPictureFiles: len(self.filesInDir):', len(self.filesInDir))
         self.cullFiles()
-        print('getPictureFiles: len(self.filesInDir):', len(self.filesInDir))
+        if self.debug:
+            dirs, files = self.countFiles()
+            print('getPictureFiles:', dirs, ' directories',
+                  files, ' files in filesInDir at end')
         return self.filesInDir
+
+    def countFiles(self):
+        if self.debug:
+            cnt = 0
+            for dir in self.filesInDir:
+                cnt += len(self.filesInDir[dir])
+            return len(self.filesInDir), cnt
+        return 0, n
 
     def cullFiles(self):
         culls = {}
@@ -271,7 +290,18 @@ class Pictures:
             label += f'Bearing: {dir:4.0f} deg\n'
         if metadata.get('gpsspeed', False):
             spd = float(Fraction(metadata['gpsspeed']))
-            label += f'Speed {spd:4.0f} m/s  {spd:4.0f} mph\n'    
+            label += f'Speed {spd:4.0f} m/s  {spd:4.0f} mph\n'
+        if metadata.get('orientation', False):
+            orient = metadata['orientation']
+            rotate = self.getRotate(filename)
+            if orient == 'Undefined' and rotate != '':
+                print('udef orientation:', orient, 'rotate:', rotate, filename)
+            elif orient == 'TopLeft' and rotate != '':
+                print('unex orientation:', orient, 'rotate:', rotate, filename)
+            elif orient != 'TopLeft' and rotate != '':
+                print('Expt orientation:', orient, 'rotate:', rotate, filename)
+            else:
+                print('Othr orientation:', orient, 'rotate:', rotate, filename)
         return label, birthday
 
 class buildImageDB:
@@ -317,7 +347,7 @@ class buildImageDB:
                   stat.st_size, label, None]
         self.c.execute(insert, values)
         self.db.commit()
-        
+
 
 
 
@@ -457,7 +487,7 @@ def main():
     build    = buildImageDB(pictureRoot, debug)
     i = -1
     skip = 999999
-    skip = 10000
+    skip = 1000
     for dir in sorted(picList):
         for file in sorted(picList[dir]):
             i += 1
