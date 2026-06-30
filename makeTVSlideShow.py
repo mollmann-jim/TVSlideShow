@@ -17,6 +17,7 @@ import re
 import pprint
 from fractions import Fraction
 import hashlib
+import random
 
 def adapt_datetime(dt):
     return dt.isoformat(sep=' ').replace('T', ' ')
@@ -38,7 +39,7 @@ class Pictures:
         imageExt = ['*jpg', '*jpeg', '*pef', '*tif', '*gif', '*bmp', '*png', '*heic',
                     '*JPG', '*JPEG', '*PEF', '*TIF', '*GIF', '*BMP', '*PNG', '*HEIC']
         unwantedDirs = ['xvpics', 'allergy', '4sale', 'small', 'images',
-                        'Jaye', 'test', 'Test2', 'Rotate', 'cull']
+                        'Jaye', 'test', 'Test2', 'Rotate', 'cull', 'unknown']
         picDirLen = len(self.picRoot)
         picturesDir = Path(self.picRoot)
         image_paths = itertools.chain.from_iterable(picturesDir.rglob(ext) \
@@ -61,7 +62,7 @@ class Pictures:
         if self.debug:
             dirs, files = self.countFiles()
             print('getPictureFiles:', dirs, ' directories',
-                  files, ' in filesInDir after remove unwanted', files)
+                  files, ' in filesInDir after remove unwanted')
         subDirs = []
         for dir1 in sorted(self.filesInDir):
             if dir1 in subDirs:
@@ -334,10 +335,11 @@ class buildImageDB:
         self.c.execute(create)
 
     def addPicture(self, filename, rotate, label, bday):
+        workDir = '/tmp/'
+        workDir = '/home/jim/tools/TVSlideShow.py/test.out/'
         insert = 'INSERT OR REPLACE INTO ' + self.DBtable + ' ( \n'    \
             ' filename, rotate, inode, md5sum, birthday, filesize, \n' \
             ' label, image) VALUES(?, ?, ?, ?, ?, ?, ?, ?);'
-        print('addPicture:', filename, rotate, bday)
         fullname = self.picRoot + filename
         stat = os.stat(fullname)
         md5sum = hashlib.md5(open(fullname, "rb").read()).hexdigest()
@@ -348,6 +350,42 @@ class buildImageDB:
         self.c.execute(insert, values)
         self.db.commit()
 
+        tgtFile  = workDir + 'slideOut.jpg'
+        tgtFile2  = workDir + 'slideOut-0.jpg'
+        # -auto-orient and/or rotate???
+        cmd = 'magick "' + fullname + '" -auto-orient ' + rotate + '-resize 1720x1080' + \
+            ' -quality 95 ' + tgtFile
+        doCmd(cmd, debug = False)
+        
+        if fullname.split('.')[-1] == 'tif':
+            command = 'mv ' + tgtFile2 + ' ' + tgtFile
+            doCmd(command)
+
+        labelText  = workDir + 'label.txt'
+        labelImage = workDir + 'label.jpg'
+        with open(labelText, 'w') as Label:
+            Label.write(label + '\n')
+        #myLabel = label.replace('\n', '\\n')
+        #print(myLabel)
+        cmd = 'magick -size 200x1080 -background grey  -fill black  -font NimbusSans-Bold '\
+            '-pointsize 11 label:@' + labelText + ' ' + labelImage
+        doCmd(cmd, debug = False)
+
+        slideFile = workDir + 'slide.jpg'
+        command = 'magick -background grey ' + tgtFile + ' ' + labelImage + ' +append ' + slideFile
+        doCmd(command)
+
+        displayFile = workDir + 'display.jpg'
+        command = 'magick ' + slideFile + ' -resize 1920x1080 -quality 95 ' + displayFile
+        doCmd(command)
+
+        with open(displayFile, 'rb') as image_file:
+            image = image_file.read()
+
+        values = [filename, rotate, stat.st_ino, md5sum, bday,
+                  stat.st_size, label, image]
+        self.c.execute(insert, values)
+        self.db.commit()
 
 
 
@@ -387,11 +425,11 @@ class Images:
         command = 'convert -auto-orient ' + rotate + '-resize 1720x1080 -quality 95 ' + \
             picture  + ' ' + tgtFile
         doCmd(command)
-        
+
         if picture.split('.')[-1] == 'tif':
             command = 'mv ' + tgtFile2 + ' ' + tgtFile
             doCmd(command)
-            
+
         labelText = self.directory + 'label.txt'
         with open(labelText, 'w') as Label:
             Label.write(label + '\n')
@@ -407,7 +445,7 @@ class Images:
         slideFile = self.directory + 'slide.jpg'
         command = 'convert -background grey ' + tgtFile + ' ' + labelImage + ' +append ' + slideFile
         doCmd(command)
-        
+
         displayFile = self.directory + 'display.jpg'
         command = 'convert -resize 1920x1080 -quality 95 ' + slideFile + ' ' + displayFile
         doCmd(command)
@@ -487,7 +525,7 @@ def main():
     build    = buildImageDB(pictureRoot, debug)
     i = -1
     skip = 999999
-    skip = 1000
+    skip = 10
     for dir in sorted(picList):
         for file in sorted(picList[dir]):
             i += 1
@@ -498,16 +536,13 @@ def main():
             label, bday = pictures.getLabel(filename)
             rotate = pictures.getRotate(filename)
             build.addPicture(filename, rotate, label, bday)
-            #print(bday)
-            #print(label)
-
-    
-
-    '''
-    images = Images()
-    #images.addImages(5)
-    images.addImages()
-    '''
+            workDir = '/home/jim/tools/TVSlideShow.py/test.out/'
+            for f in ['slideOut.jpg', 'label.jpg', 'slide.jpg', 'display.jpg', 'label.txt']:
+                inF  = workDir + f
+                outF = workDir + f.split('.')[0] + '.' + f'{i:05d}' + '.' + f.split('.')[1]
+                cmd = 'mv ' + inF + ' ' + outF
+                doCmd(cmd)
+            
     
 if __name__ == '__main__':
     # want unbuffered stdout for use with "tee"
