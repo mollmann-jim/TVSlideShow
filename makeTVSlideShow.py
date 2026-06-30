@@ -35,12 +35,12 @@ class Pictures:
         self.filesInDir      = {}
         self.debugRotates    = {}
         self.dbgRotatesCpy   = {}
+        self.unwantedDirs = ['xvpics', 'allergy', '4sale', 'small', 'images',
+                             'Jaye', 'test', 'Test2', 'Rotate', 'cull', 'unknown']
 
     def getPictureFiles(self):
         imageExt = ['*jpg', '*jpeg', '*pef', '*tif', '*gif', '*bmp', '*png', '*heic',
                     '*JPG', '*JPEG', '*PEF', '*TIF', '*GIF', '*BMP', '*PNG', '*HEIC']
-        unwantedDirs = ['xvpics', 'allergy', '4sale', 'small', 'images',
-                        'Jaye', 'test', 'Test2', 'Rotate', 'cull', 'unknown']
         picDirLen = len(self.picRoot)
         picturesDir = Path(self.picRoot)
         image_paths = itertools.chain.from_iterable(picturesDir.rglob(ext) \
@@ -56,7 +56,7 @@ class Pictures:
                   files, ' files in filesInDir after initial scan')
 
         for dir in sorted(self.filesInDir):
-            for remove in unwantedDirs:
+            for remove in self.unwantedDirs:
                 if remove in dir:
                     del self.filesInDir[dir]
                     break
@@ -143,7 +143,7 @@ class Pictures:
             self.flopSlides()
             self.setupDebugRotate()
         if self.rotates.get(filename, False):
-            print('rotate', filename, self.rotates[filename])
+            #print('rotate', filename, self.rotates[filename])
             return self.rotates[filename]
         else:
             self.debugRotate(filename)
@@ -163,8 +163,9 @@ class Pictures:
         i = 0
         for rot in rotPath.rglob('*'):
             file = str(rot.name).replace('_', '/')
-            rotatesDict[file] = option
-            i += 1
+            if not any( dir in file for dir in self.unwantedDirs):
+                rotatesDict[file] = option
+                i += 1
         print('getRotates:', subDir, ' - ', i, len(rotatesDict))
 
     def flopSlides(self):
@@ -300,6 +301,17 @@ class Pictures:
         if metadata.get('orientation', False):
             orient = metadata['orientation']
             rotate = self.getRotate(filename)
+            if rotate == 'flop' or rotate == '':
+                pass
+            elif rotate != '' and (orient == 'TopLeft' or orient == 'Undefined'):
+                print('Rotate only orientation:', orient, 'rotate:', rotate, filename)
+            elif (rotate == 'R180' and orient == 'BottomRight') or \
+                 (rotate == 'R90'  and orient == 'LeftBottom' ) or \
+                 (rotate == 'L90'  and orient == 'RightTop'):
+                print('Double fixup orientation:', orient, 'rotate:', rotate, filename)
+            else:
+                print('Conflicting fixup orientation:', orient, 'rotate:', rotate, filename)
+            '''    
             if orient == 'Undefined' and rotate != '':
                 print('udef orientation:', orient, 'rotate:', rotate, filename)
             elif orient == 'TopLeft' and rotate != '':
@@ -308,6 +320,7 @@ class Pictures:
                 print('Expt orientation:', orient, 'rotate:', rotate, filename)
             else:
                 print('Othr orientation:', orient, 'rotate:', rotate, filename)
+            '''
         return label, birthday
 
 class buildImageDB:
@@ -326,7 +339,7 @@ class buildImageDB:
         if self.debug:
             drop = 'DROP TABLE IF EXISTS ' + self.DBtable + ';'
             self.c.execute(drop)
-        create = 'CREATE TABLE IF NOT EXISTS ' + self.DBtable + ' ( \n' +\
+        create = 'CREATE TABLE IF NOT EXISTS ' + self.DBtable + ' (  \n' +\
             ' filename       TEXT PRIMARY KEY,                       \n' +\
             ' timestamp      INTEGER DEFAULT CURRENT_TIMESTAMP,      \n' +\
             ' rotate         TEXT DEFAULT NULL,                      \n' +\
@@ -335,23 +348,25 @@ class buildImageDB:
             ' birthday       INTEGER,                                \n' +\
             ' filesize       INTEGER,                                \n' +\
             ' label          TEXT,                                   \n' +\
+            ' dirNum         INTEGER,                                \n' +\
+            ' fileNum        INTEGER,                                \n' +\
             ' image          BLOB DEFAULT NULL                       \n' +\
             ' );'
         self.c.execute(create)
 
-    def addPicture(self, filename, rotate, label, bday):
+    def addPicture(self, filename, rotate, label, bday, dirNum, fileNum):
         workDir = '/tmp/'
         workDir = '/home/jim/tools/TVSlideShow.py/test.out/'
         insert = 'INSERT OR REPLACE INTO ' + self.DBtable + ' ( \n'    \
             ' filename, rotate, inode, md5sum, birthday, filesize, \n' \
-            ' label, image) VALUES(?, ?, ?, ?, ?, ?, ?, ?);'
+            ' label, dirNum, fileNum, image) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?);'
         fullname = self.picRoot + filename
         stat = os.stat(fullname)
         md5sum = hashlib.md5(open(fullname, "rb").read()).hexdigest()
         print('addPicture:', filename, rotate, bday, stat.st_ino,
               stat.st_size, md5sum, rotate)
         values = [filename, rotate, stat.st_ino, md5sum, bday,
-                  stat.st_size, label, None]
+                  stat.st_size, label, dirNum, fileNum, None]
         self.c.execute(insert, values)
         self.db.commit()
 
@@ -398,9 +413,14 @@ class buildImageDB:
         with open(displayFile, 'rb') as image_file:
             image = image_file.read()
 
+        '''
         values = [filename, rotate, stat.st_ino, md5sum, bday,
                   stat.st_size, label, image]
-        self.c.execute(insert, values)
+        '''
+        update = 'UPDATE ' + self.DBtable + ' SET image = ? WHERE filename = ? ;'
+        self.c.execute(update, [image, filename])
+        #values.append(image)
+        #self.c.execute(insert, values)
         self.db.commit()
 
 
@@ -542,8 +562,12 @@ def main():
     i = -1
     skip = 999999
     skip = 1
+    dirNum = 0
     for dir in sorted(picList):
+        dirNum += 1
+        fileNum = 0
         for file in sorted(picList[dir]):
+            fileNum +=1
             i += 1
             if i % skip != 0:
                 continue
@@ -551,7 +575,8 @@ def main():
             #print(f'{i:6d} : {filename:s}')
             label, bday = pictures.getLabel(filename)
             rotate = pictures.getRotate(filename)
-            build.addPicture(filename, rotate, label, bday)
+            #continue
+            build.addPicture(filename, rotate, label, bday, dirNum, fileNum)
             workDir = '/home/jim/tools/TVSlideShow.py/test.out/'
             for f in ['slideOut.jpg', 'label.jpg', 'slide.jpg', 'display.jpg', 'label.txt']:
                 inF  = workDir + f
