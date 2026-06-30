@@ -18,6 +18,7 @@ import pprint
 from fractions import Fraction
 import hashlib
 import random
+from contextlib import suppress
 
 def adapt_datetime(dt):
     return dt.isoformat(sep=' ').replace('T', ' ')
@@ -233,17 +234,21 @@ class Pictures:
         birthday = time = None
         if metadata.get('datetime', False):
             time     = metadata['datetime']
-            birthday = dt.datetime.strptime(time, '%Y:%m:%d %H:%M:%S')
-        elif metadata.get('modify', False):
+            with suppress(ValueError):
+                birthday = dt.datetime.strptime(time, '%Y:%m:%d %H:%M:%S')
+        if birthday is None and  metadata.get('modify', False):
             time     = metadata['modify']
-            birthday = dt.datetime.strptime(time, '%Y-%m-%dT%H:%M:%S+00:00')
-        elif metadata.get('createdate', False):
-            time     = metadata['createdate']
-            birthday = 'createdate' + metadata['createdate']
-        elif metadata.get('filemodifydate', False):
+            with suppress(ValueError):
+                birthday = dt.datetime.strptime(time, '%Y-%m-%dT%H:%M:%S+00:00')
+        if birthday is None and metadata.get('filemodifydate', False):
             time     = metadata['filemodifydate']
-            birthday = 'filemodifydate' + metadata['filemodifydate']
-        else:
+            with suppress(ValueError):
+                birthday = 'filemodifydate' + metadata['filemodifydate']
+        if birthday is None and metadata.get('create', False): 
+            time     = metadata['create']
+            with suppress(ValueError):
+                birthday = dt.datetime.strptime(time, '%Y-%m-%dT%H:%M:%S+00:00')
+        if birthday is None:
             print(filename, 'needs birthday')
             pprint.pprint(metadata)
         if time is not None:
@@ -355,12 +360,17 @@ class buildImageDB:
         # -auto-orient and/or rotate???
         cmd = 'magick "' + fullname + '" -auto-orient ' + rotate + '-resize 1720x1080' + \
             ' -quality 95 ' + tgtFile
-        doCmd(cmd, debug = False)
+        result = doCmd(cmd, debug = False)
+        if result.returncode != 0:
+            print('ABORT: addPicture: initial image:', filename)
+            return False
         
         if fullname.split('.')[-1] == 'tif':
             command = 'mv ' + tgtFile2 + ' ' + tgtFile
-            doCmd(command)
-
+            result = doCmd(command)
+            if result.returncode != 0:
+                print('ABORT: addPicture: Mv TIF image:', filename)
+                return False
         labelText  = workDir + 'label.txt'
         labelImage = workDir + 'label.jpg'
         with open(labelText, 'w') as Label:
@@ -369,16 +379,22 @@ class buildImageDB:
         #print(myLabel)
         cmd = 'magick -size 200x1080 -background grey  -fill black  -font NimbusSans-Bold '\
             '-pointsize 11 label:@' + labelText + ' ' + labelImage
-        doCmd(cmd, debug = False)
-
+        result = doCmd(cmd, debug = False)
+        if result.returncode != 0:
+            print('ABORT: addPicture: label image:', filename)
+            return False
         slideFile = workDir + 'slide.jpg'
         command = 'magick -background grey ' + tgtFile + ' ' + labelImage + ' +append ' + slideFile
-        doCmd(command)
-
+        result = doCmd(command)
+        if result.returncode != 0:
+            print('ABORT: addPicture: initial + label image:', filename)
+            return False
         displayFile = workDir + 'display.jpg'
         command = 'magick ' + slideFile + ' -resize 1920x1080 -quality 95 ' + displayFile
-        doCmd(command)
-
+        result = doCmd(command)
+        if result.returncode != 0:
+            print('ABORT: addPicture: final image:', filename)
+            return False
         with open(displayFile, 'rb') as image_file:
             image = image_file.read()
 
@@ -525,7 +541,7 @@ def main():
     build    = buildImageDB(pictureRoot, debug)
     i = -1
     skip = 999999
-    skip = 10
+    skip = 1
     for dir in sorted(picList):
         for file in sorted(picList[dir]):
             i += 1
