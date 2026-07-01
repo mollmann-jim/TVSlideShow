@@ -126,15 +126,20 @@ class Pictures:
         if self.debugRotates.get(filename, False):
             for rot in self.debugRotates[filename]:
                 if rot == fullname:
-                    if  self.debugRotateMsgs:
+                    if self.debugRotateMsgs:
                         print('debugRotate: match:', rot,
                               self.dbgRotatesCpy[fullname])
+                elif self.dbgRotatesCpy[rot] == 'OK':
+                    if self.debugRotateMsgs:
+                        print('debugRotate:', fullname,
+                              ' possible match:', rot,
+                              self.dbgRotatesCpy[rot])
                 else:
                     print('debugRotate:', fullname,
                           ' possible match:', rot,
                           self.dbgRotatesCpy[rot])
         else:
-            if  self.debugRotateMsgs:
+            if self.debugRotateMsgs:
                 print('debugRotate: no possible rotates:', fullname)
 
     def getRotate(self, filename):
@@ -181,7 +186,7 @@ class Pictures:
         fields = {}
         for dir in sorted(self.filesInDir):
             for file in self.filesInDir[dir]:
-                labelData = self.getLabelData(dir + file)
+                labelData = self.getLabelData(dir + file, None)
                 print('\n' + dir + file)
                 pprint.pprint(labelData)
                 for meta in labelData:
@@ -196,16 +201,23 @@ class Pictures:
             for file in self.filesInDir[dir]:
                 labelData = self.getLabelData(dir + file)
                 labels[dir + file] = self.composeLabel(dir + file, labelData)
-
-    def getLabel(self, file):
-        meta = self.getLabelData(file)
-        label = self.composeLabel(file, meta)
+                
+    def getLabel(self, filename, orgImage):
+        #meta = self.getLabelData(filename)
+        print('getLabel:', filename, len(orgImage), type(orgImage))
+        meta = self.getLabelData(filename, orgImage)
+        label = self.composeLabel(filename, meta)
         return label
 
-    def getLabelData(self, file):
+    def getLabelData(self, filename, orgImage):
         self.pp = pprint.PrettyPrinter(indent=4, sort_dicts=False)
-        cmd = 'identify -verbose "' + self.picRoot + file + '"'
-        result = doCmd(cmd)
+        if orgImage is None:
+            cmd = 'identify -verbose "' + self.picRoot + filename + '"'
+            result = doCmd(cmd)
+        else:
+            cmd = 'identify -verbose -'
+            print('getLabelData:', cmd)
+            result = doCmd(cmd, input = orgImage)
         kv_regex = re.compile(r"^\s+([\w\s]+):\s*(.*)$")
         metadata = {}
         for line in result.stdout.splitlines():
@@ -214,7 +226,7 @@ class Pictures:
                 line = line.replace('exif:', '').replace('jpeg:', '')
             except Exception as e:
                 lineHex = line.hex(' ', bytes_per_sep = -4)
-                print(f'Skipping file {file:s}')
+                print(f'Skipping file {filename:s}')
                 print(f'line(hex): {lineHex:s}')
                 print(f' due to error: {e}')
                 for word in lineHex.split():
@@ -354,15 +366,17 @@ class buildImageDB:
             ' );'
         self.c.execute(create)
 
-    def addPicture(self, filename, rotate, label, bday, dirNum, fileNum):
+    def addPicture(self, filename, rotate, label, bday, orgImage, dirNum, fileNum):
         workDir = '/tmp/'
-        workDir = '/home/jim/tools/TVSlideShow.py/test.out/'
+        #workDir = '/home/jim/tools/TVSlideShow.py/test.out/'
         insert = 'INSERT OR REPLACE INTO ' + self.DBtable + ' ( \n'    \
             ' filename, rotate, inode, md5sum, birthday, filesize, \n' \
             ' label, dirNum, fileNum, image) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?);'
         fullname = self.picRoot + filename
         stat = os.stat(fullname)
-        md5sum = hashlib.md5(open(fullname, "rb").read()).hexdigest()
+        #md5sum = hashlib.md5(open(fullname, "rb").read()).hexdigest()
+        md5sum = hashlib.md5(orgImage).hexdigest()
+
         print('addPicture:', filename, rotate, bday, stat.st_ino,
               stat.st_size, md5sum, rotate)
         values = [filename, rotate, stat.st_ino, md5sum, bday,
@@ -373,9 +387,14 @@ class buildImageDB:
         tgtFile  = workDir + 'slideOut.jpg'
         tgtFile2  = workDir + 'slideOut-0.jpg'
         # -auto-orient and/or rotate???
+        '''
         cmd = 'magick "' + fullname + '" -auto-orient ' + rotate + '-resize 1720x1080' + \
             ' -quality 95 ' + tgtFile
         result = doCmd(cmd, debug = False)
+        '''
+        cmd = 'magick - -auto-orient ' + rotate + '-resize 1720x1080' + \
+            ' -quality 95 ' + tgtFile
+        result = doCmd(cmd, debug = False, input = orgImage)
         if result.returncode != 0:
             print('ABORT: addPicture: initial image:', filename)
             return False
@@ -422,9 +441,27 @@ class buildImageDB:
         #values.append(image)
         #self.c.execute(insert, values)
         self.db.commit()
-
         
-def doCmd(command, printFailure = True, debug = False):
+def doCmd(command, printFailure = True, debug = False, input = None):
+    if debug:
+        print('doCmd:command:', command)
+    result = subprocess.run(command, shell = True, stdout = subprocess.PIPE, \
+                            stderr=subprocess.STDOUT, input = input, check = False)
+    if debug:
+        if result.stdout is not None:
+            print('stdout:' + '\n' + result.stdout.decode('utf-8'))
+        if result.stderr is not None:
+            print('stderr:' + '\n' + result.stderr.decode('utf-8'))
+
+    if result.returncode != 0 & printFailure:
+        #print(result.stdout)
+        print('Failed: RC:', result.returncode, command)
+        print(result.stderr)
+    if debug:
+        print('doCmd:result:', result)
+    return result
+        
+def doCmdOld(command, printFailure = True, debug = True):
     if debug:
         print('doCmd:command:', command)
     result = subprocess.run(command, shell = True, stdout = subprocess.PIPE, \
@@ -466,12 +503,12 @@ def main():
     pictures = Pictures(pictureRoot, debug)
     #pictures.picRoot = '/home/jim/pictures/Edgecliff/Edgecliff friends/'
     picList  = pictures.getPictureFiles()
-    #pictures.countLabels()
+    #pictures.countLabelsNone)
     
     build    = buildImageDB(pictureRoot, debug)
     i = -1
     skip = 999999
-    skip = 1
+    #skip = 1
     dirNum = 0
     for dir in sorted(picList):
         dirNum += 1
@@ -482,17 +519,25 @@ def main():
             if i % skip != 0:
                 continue
             filename = dir + file
-            #print(f'{i:6d} : {filename:s}')
-            label, bday = pictures.getLabel(filename)
+            print(f'{i:6d} : {filename:s}')
+            
+            with open(pictureRoot + filename, 'rb') as image_file:
+                orgImage = image_file.read()
+            label, bday = pictures.getLabel(filename, orgImage)
+            
+            #label, bday = pictures.getLabel(filename)
+            
             rotate = pictures.getRotate(filename)
             #continue
-            build.addPicture(filename, rotate, label, bday, dirNum, fileNum)
+            build.addPicture(filename, rotate, label, bday, orgImage, dirNum, fileNum)
+            '''
             workDir = '/home/jim/tools/TVSlideShow.py/test.out/'
             for f in ['slideOut.jpg', 'label.jpg', 'slide.jpg', 'display.jpg', 'label.txt']:
                 inF  = workDir + f
                 outF = workDir + f.split('.')[0] + '.' + f'{i:05d}' + '.' + f.split('.')[1]
                 cmd = 'mv ' + inF + ' ' + outF
                 doCmd(cmd)
+            '''
             
     
 if __name__ == '__main__':
