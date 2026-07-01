@@ -211,7 +211,8 @@ class Pictures:
 
     def getLabelData(self, filename, orgImage):
         self.pp = pprint.PrettyPrinter(indent=4, sort_dicts=False)
-        if orgImage is None:
+        ext = filename.split('.')[-1].lower()
+        if orgImage is None or ext == 'tif' or ext == 'pef':
             cmd = 'identify -verbose "' + self.picRoot + filename + '"'
             result = doCmd(cmd)
         else:
@@ -391,20 +392,32 @@ class buildImageDB:
         cmd = 'magick "' + fullname + '" -auto-orient ' + rotate + '-resize 1720x1080' + \
             ' -quality 95 ' + tgtFile
         result = doCmd(cmd, debug = False)
-        '''
+
         cmd = 'magick - -auto-orient ' + rotate + '-resize 1720x1080' + \
             ' -quality 95 ' + tgtFile
         result = doCmd(cmd, debug = False, input = orgImage)
+        '''
+        if fullname.split('.')[-1] == 'tif':
+            imageNum = '[0]'
+        else:
+            imageNum = ''
+        cmd = 'magick -' + imageNum + ' -auto-orient ' + rotate + '-resize 1720x1080' + \
+            ' -quality 95 jpeg:-'
+        result = doCmd(cmd, debug = False, input = orgImage)
+
         if result.returncode != 0:
             print('ABORT: addPicture: initial image:', filename)
             return False
-        
+        resizeImage = result.stdout
+        print('resizeImage:', len(resizeImage))
+        '''
         if fullname.split('.')[-1] == 'tif':
             command = 'mv ' + tgtFile2 + ' ' + tgtFile
             result = doCmd(command)
             if result.returncode != 0:
                 print('ABORT: addPicture: Mv TIF image:', filename)
                 return False
+        '''
         labelText  = workDir + 'label.txt'
         labelImage = workDir + 'label.jpg'
         with open(labelText, 'w') as Label:
@@ -418,20 +431,35 @@ class buildImageDB:
             print('ABORT: addPicture: label image:', filename)
             return False
         slideFile = workDir + 'slide.jpg'
+        '''
         command = 'magick -background grey ' + tgtFile + ' ' + labelImage + ' +append ' + slideFile
         result = doCmd(command)
+        '''
+        cmd = 'magick -background grey - ' + labelImage + ' +append ' + slideFile
+        cmd = 'magick -background grey - ' + labelImage + ' +append jpeg:-'
+        result = doCmd(cmd, input = resizeImage)
         if result.returncode != 0:
             print('ABORT: addPicture: initial + label image:', filename)
             return False
+        labeledImage = result.stdout
+        '''
         displayFile = workDir + 'display.jpg'
         command = 'magick ' + slideFile + ' -resize 1920x1080 -quality 95 ' + displayFile
         result = doCmd(command)
+        '''
+        cmd = 'magick - -resize 1920x1080 -quality 95 jpeg:-'
+        result = doCmd(cmd, input = labeledImage)
         if result.returncode != 0:
             print('ABORT: addPicture: final image:', filename)
             return False
+        image = result.stdout
+        '''
         with open(displayFile, 'rb') as image_file:
             image = image_file.read()
-
+        '''
+        displayFile = workDir + 'display.jpg'
+        with open(displayFile, 'wb') as image_file:
+            image_file.write(image)
         '''
         values = [filename, rotate, stat.st_ino, md5sum, bday,
                   stat.st_size, label, image]
@@ -508,7 +536,7 @@ def main():
     build    = buildImageDB(pictureRoot, debug)
     i = -1
     skip = 999999
-    #skip = 1
+    skip = 10000
     dirNum = 0
     for dir in sorted(picList):
         dirNum += 1
