@@ -204,7 +204,7 @@ class Pictures:
                 
     def getLabel(self, filename, orgImage):
         #meta = self.getLabelData(filename)
-        print('getLabel:', filename, len(orgImage), type(orgImage))
+        #print('getLabel:', filename, len(orgImage), type(orgImage))
         meta = self.getLabelData(filename, orgImage)
         label = self.composeLabel(filename, meta)
         return label
@@ -212,12 +212,13 @@ class Pictures:
     def getLabelData(self, filename, orgImage):
         self.pp = pprint.PrettyPrinter(indent=4, sort_dicts=False)
         ext = filename.split('.')[-1].lower()
-        if orgImage is None or ext == 'tif' or ext == 'pef':
+        isPEF =  ext == 'pef'
+        if orgImage is None or isPEF:
             cmd = 'identify -verbose "' + self.picRoot + filename + '"'
             result = doCmd(cmd)
         else:
             cmd = 'identify -verbose -'
-            print('getLabelData:', cmd)
+            #print('getLabelData:', cmd)
             result = doCmd(cmd, input = orgImage)
         kv_regex = re.compile(r"^\s+([\w\s]+):\s*(.*)$")
         metadata = {}
@@ -324,16 +325,6 @@ class Pictures:
                 print('Double fixup orientation:', orient, 'rotate:', rotate, filename)
             else:
                 print('Conflicting fixup orientation:', orient, 'rotate:', rotate, filename)
-            '''    
-            if orient == 'Undefined' and rotate != '':
-                print('udef orientation:', orient, 'rotate:', rotate, filename)
-            elif orient == 'TopLeft' and rotate != '':
-                print('unex orientation:', orient, 'rotate:', rotate, filename)
-            elif orient != 'TopLeft' and rotate != '':
-                print('Expt orientation:', orient, 'rotate:', rotate, filename)
-            else:
-                print('Othr orientation:', orient, 'rotate:', rotate, filename)
-            '''
         return label, birthday
 
 class buildImageDB:
@@ -387,6 +378,8 @@ class buildImageDB:
 
         tgtFile  = workDir + 'slideOut.jpg'
         tgtFile2  = workDir + 'slideOut-0.jpg'
+        ext = filename.split('.')[-1].lower()
+        isPEF =  ext == 'pef'
         # -auto-orient and/or rotate???
         '''
         cmd = 'magick "' + fullname + '" -auto-orient ' + rotate + '-resize 1720x1080' + \
@@ -401,15 +394,20 @@ class buildImageDB:
             imageNum = '[0]'
         else:
             imageNum = ''
-        cmd = 'magick -' + imageNum + ' -auto-orient ' + rotate + '-resize 1720x1080' + \
+        if isPEF:
+            cmd = 'magick ' + fullname + ' -auto-orient ' + rotate + '-resize 1720x1080' + \
             ' -quality 95 jpeg:-'
-        result = doCmd(cmd, debug = False, input = orgImage)
+            result = doCmd(cmd, debug = False)
+        else:
+            cmd = 'magick -' + imageNum + ' -auto-orient ' + rotate + '-resize 1720x1080' + \
+                ' -quality 95 jpeg:-'
+            result = doCmd(cmd, debug = False, input = orgImage)
 
         if result.returncode != 0:
             print('ABORT: addPicture: initial image:', filename)
             return False
         resizeImage = result.stdout
-        print('resizeImage:', len(resizeImage))
+        #print('resizeImage:', len(resizeImage))
         '''
         if fullname.split('.')[-1] == 'tif':
             command = 'mv ' + tgtFile2 + ' ' + tgtFile
@@ -435,7 +433,7 @@ class buildImageDB:
         command = 'magick -background grey ' + tgtFile + ' ' + labelImage + ' +append ' + slideFile
         result = doCmd(command)
         '''
-        cmd = 'magick -background grey - ' + labelImage + ' +append ' + slideFile
+        #cmd = 'magick -background grey - ' + labelImage + ' +append ' + slideFile
         cmd = 'magick -background grey - ' + labelImage + ' +append jpeg:-'
         result = doCmd(cmd, input = resizeImage)
         if result.returncode != 0:
@@ -536,7 +534,7 @@ def main():
     build    = buildImageDB(pictureRoot, debug)
     i = -1
     skip = 999999
-    skip = 10000
+    skip = 1000
     dirNum = 0
     for dir in sorted(picList):
         dirNum += 1
@@ -547,7 +545,7 @@ def main():
             if i % skip != 0:
                 continue
             filename = dir + file
-            print(f'{i:6d} : {filename:s}')
+            #print(f'{i:6d} : {filename:s}')
             
             with open(pictureRoot + filename, 'rb') as image_file:
                 orgImage = image_file.read()
