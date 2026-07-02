@@ -373,7 +373,6 @@ class buildImageDB:
             ' label, dirNum, fileNum, image) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?);'
         fullname = self.picRoot + filename
         stat = os.stat(fullname)
-        #md5sum = hashlib.md5(open(fullname, "rb").read()).hexdigest()
         md5sum = hashlib.md5(orgImage).hexdigest()
 
         print('addPicture:', filename, rotate, bday, stat.st_ino,
@@ -388,28 +387,13 @@ class buildImageDB:
         ext = filename.split('.')[-1].lower()
         isPEF =  ext == 'pef'
         # -auto-orient and/or rotate???
-        '''
-        cmd = 'magick "' + fullname + '" -auto-orient ' + rotate + '-resize 1720x1080' + \
-            ' -quality 95 ' + tgtFile
-        result = doCmd(cmd, debug = False)
-
-        cmd = 'magick - -auto-orient ' + rotate + '-resize 1720x1080' + \
-            ' -quality 95 ' + tgtFile
-        result = doCmd(cmd, debug = False, input = orgImage)
-        '''
         if fullname.split('.')[-1] == 'tif':
             imageNum = '[0]'
         else:
             imageNum = ''
         if isPEF:
-            '''
-            cmd = 'magick ' + fullname + ' -auto-orient ' + rotate + '-resize 1720x1080' + \
-            ' -quality 95 jpeg:-'
-            result = doCmd(cmd, debug = False)
-            '''
             cmd = 'magick PEF:- -auto-orient ' + rotate + '-resize 1720x1080' + \
             ' -quality 95 jpeg:-'
-            #result = doCmd(cmd, debug = False, input = orgImage)
         else:
             cmd = 'magick -' + imageNum + ' -auto-orient ' + rotate + '-resize 1720x1080' + \
                 ' -quality 95 jpeg:-'
@@ -420,20 +404,11 @@ class buildImageDB:
             return False
         resizeImage = result.stdout
         #print('resizeImage:', len(resizeImage))
-        '''
-        if fullname.split('.')[-1] == 'tif':
-            command = 'mv ' + tgtFile2 + ' ' + tgtFile
-            result = doCmd(command)
-            if result.returncode != 0:
-                print('ABORT: addPicture: Mv TIF image:', filename)
-                return False
-        '''
+        
         labelText  = workDir + 'label.txt'
         labelImage = workDir + 'label.jpg'
         with open(labelText, 'w') as Label:
             Label.write(label + '\n')
-        #myLabel = label.replace('\n', '\\n')
-        #print(myLabel)
         cmd = 'magick -size 200x1080 -background grey  -fill black  -font NimbusSans-Bold '\
             '-pointsize 11 label:@' + labelText + ' ' + labelImage
         result = doCmd(cmd, debug = False)
@@ -442,10 +417,7 @@ class buildImageDB:
             print('label:', label)
             return False
         slideFile = workDir + 'slide.jpg'
-        '''
-        command = 'magick -background grey ' + tgtFile + ' ' + labelImage + ' +append ' + slideFile
-        result = doCmd(command)
-        '''
+
         #cmd = 'magick -background grey - ' + labelImage + ' +append ' + slideFile
         cmd = 'magick -background grey jpeg:- ' + labelImage + ' +append jpeg:-'
         result = doCmd(cmd, input = resizeImage)
@@ -455,32 +427,16 @@ class buildImageDB:
             print('label:', label, len(resizeImage))
             return False
         labeledImage = result.stdout
-        '''
-        displayFile = workDir + 'display.jpg'
-        command = 'magick ' + slideFile + ' -resize 1920x1080 -quality 95 ' + displayFile
-        result = doCmd(command)
-        '''
+
         cmd = 'magick - -resize 1920x1080 -quality 95 jpeg:-'
         result = doCmd(cmd, input = labeledImage)
         if result.returncode != 0:
             print('ABORT: addPicture: final image:', filename)
             return False
         image = result.stdout
-        '''
-        with open(displayFile, 'rb') as image_file:
-            image = image_file.read()
-        '''
-        displayFile = workDir + 'display.jpg'
-        with open(displayFile, 'wb') as image_file:
-            image_file.write(image)
-        '''
-        values = [filename, rotate, stat.st_ino, md5sum, bday,
-                  stat.st_size, label, image]
-        '''
+
         update = 'UPDATE ' + self.DBtable + ' SET image = ? WHERE filename = ? ;'
         self.c.execute(update, [image, filename])
-        #values.append(image)
-        #self.c.execute(insert, values)
         self.db.commit()
         
 def doCmd(command, printFailure = True, debug = False, input = None):
@@ -501,26 +457,6 @@ def doCmd(command, printFailure = True, debug = False, input = None):
     if debug:
         print('doCmd:result:', result)
     return result
-        
-def doCmdOld(command, printFailure = True, debug = True):
-    if debug:
-        print('doCmd:command:', command)
-    result = subprocess.run(command, shell = True, stdout = subprocess.PIPE, \
-                            stderr=subprocess.STDOUT, check = False)
-    if debug:
-        if result.stdout is not None:
-            print('stdout:' + '\n' + result.stdout.decode('utf-8'))
-        if result.stderr is not None:
-            print('stderr:' + '\n' + result.stderr.decode('utf-8'))
-
-    if result.returncode != 0 & printFailure:
-        #print(result.stdout)
-        print('Failed: RC:', result.returncode, command)
-        print(result.stderr)
-    if debug:
-        print('doCmd:result:', result)
-    return result
-                  
 
 def doCmdOrg(command):
     #print('doCmd:', command)
@@ -576,15 +512,6 @@ def main():
             rotate = pictures.getRotate(filename)
             #continue
             build.addPicture(filename, rotate, label, bday, orgImage, dirNum, fileNum)
-            '''
-            workDir = '/home/jim/tools/TVSlideShow.py/test.out/'
-            for f in ['slideOut.jpg', 'label.jpg', 'slide.jpg', 'display.jpg', 'label.txt']:
-                inF  = workDir + f
-                outF = workDir + f.split('.')[0] + '.' + f'{i:05d}' + '.' + f.split('.')[1]
-                cmd = 'mv ' + inF + ' ' + outF
-                doCmd(cmd)
-            '''
-            
     
 if __name__ == '__main__':
     # want unbuffered stdout for use with "tee"
