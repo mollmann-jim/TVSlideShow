@@ -214,17 +214,20 @@ class Pictures:
         ext = filename.split('.')[-1].lower()
         isPEF =  ext == 'pef'
         if orgImage is None or isPEF:
-            cmd = 'identify -verbose "' + self.picRoot + filename + '"'
+            cmd = 'magick identify -verbose "' + self.picRoot + filename + '"'
             result = doCmd(cmd)
+        elif isPEF:
+            cmd = 'magick identify -verbose PEF:-'
+            result = doCmd(cmd, input = orgImage)
         else:
-            cmd = 'identify -verbose -'
+            cmd = 'magick identify -verbose -'
             #print('getLabelData:', cmd)
             result = doCmd(cmd, input = orgImage)
         kv_regex = re.compile(r"^\s+([\w\s]+):\s*(.*)$")
         metadata = {}
         for line in result.stdout.splitlines():
             try:
-                line = line.decode('utf-8').replace('date:', '')
+                line = line.decode('utf-8').replace('date:', '').replace('dng:', '')
                 line = line.replace('exif:', '').replace('jpeg:', '')
             except Exception as e:
                 lineHex = line.hex(' ', bytes_per_sep = -4)
@@ -261,6 +264,10 @@ class Pictures:
                 birthday = 'filemodifydate' + metadata['filemodifydate']
         if birthday is None and metadata.get('create', False): 
             time     = metadata['create']
+            with suppress(ValueError):
+                birthday = dt.datetime.strptime(time, '%Y-%m-%dT%H:%M:%S+00:00')
+        if birthday is None and metadata.get('create.date', False): 
+            time     = metadata['create.date']
             with suppress(ValueError):
                 birthday = dt.datetime.strptime(time, '%Y-%m-%dT%H:%M:%S+00:00')
         if birthday is None:
@@ -395,13 +402,18 @@ class buildImageDB:
         else:
             imageNum = ''
         if isPEF:
+            '''
             cmd = 'magick ' + fullname + ' -auto-orient ' + rotate + '-resize 1720x1080' + \
             ' -quality 95 jpeg:-'
             result = doCmd(cmd, debug = False)
+            '''
+            cmd = 'magick PEF:- -auto-orient ' + rotate + '-resize 1720x1080' + \
+            ' -quality 95 jpeg:-'
+            #result = doCmd(cmd, debug = False, input = orgImage)
         else:
             cmd = 'magick -' + imageNum + ' -auto-orient ' + rotate + '-resize 1720x1080' + \
                 ' -quality 95 jpeg:-'
-            result = doCmd(cmd, debug = False, input = orgImage)
+        result = doCmd(cmd, debug = False, input = orgImage)
 
         if result.returncode != 0:
             print('ABORT: addPicture: initial image:', filename)
@@ -427,6 +439,7 @@ class buildImageDB:
         result = doCmd(cmd, debug = False)
         if result.returncode != 0:
             print('ABORT: addPicture: label image:', filename)
+            print('label:', label)
             return False
         slideFile = workDir + 'slide.jpg'
         '''
@@ -434,10 +447,12 @@ class buildImageDB:
         result = doCmd(command)
         '''
         #cmd = 'magick -background grey - ' + labelImage + ' +append ' + slideFile
-        cmd = 'magick -background grey - ' + labelImage + ' +append jpeg:-'
+        cmd = 'magick -background grey jpeg:- ' + labelImage + ' +append jpeg:-'
         result = doCmd(cmd, input = resizeImage)
         if result.returncode != 0:
             print('ABORT: addPicture: initial + label image:', filename)
+            print(result.stderr)
+            print('label:', label, len(resizeImage))
             return False
         labeledImage = result.stdout
         '''
@@ -534,7 +549,8 @@ def main():
     build    = buildImageDB(pictureRoot, debug)
     i = -1
     skip = 999999
-    skip = 1000
+    skip = 10000
+    skip = 1
     dirNum = 0
     for dir in sorted(picList):
         dirNum += 1
@@ -546,7 +562,11 @@ def main():
                 continue
             filename = dir + file
             #print(f'{i:6d} : {filename:s}')
-            
+            '''
+            ext = filename.split('/')[-1]
+            if ext != 'IMGP1559.PEF':
+                continue
+            '''
             with open(pictureRoot + filename, 'rb') as image_file:
                 orgImage = image_file.read()
             label, bday = pictures.getLabel(filename, orgImage)
