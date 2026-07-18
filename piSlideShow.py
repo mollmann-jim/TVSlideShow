@@ -14,7 +14,7 @@ import sched
 import random
 import argparse
 import sqlite3
-
+import pprint
 
 class Picture:
     # select and get an image
@@ -39,6 +39,8 @@ class Picture:
         self.n         = 0
         self.groupSize = 11
         self.group     = []
+        self.rows      = []
+        self.files     = {}
         #self.rowsleft = list(range(1, 4))
         #self.rowsleft = list(range(20836, 20840))
         #print(self.rowsleft)
@@ -81,8 +83,66 @@ class Picture:
             py = os.path.abspath(__file__)
             print('DB updated, restarting')
             os.execv(py, args)
+
+    def getRange(self, idx, length):
+        #print('getRange: idx:', idx, 'length:', length)
+        if length < self.groupSize:
+            return 0, length - 1
+        around = int(self.groupSize / 2)
+        first = idx - around
+        last  = idx + around
+        print('getRange: idx:', idx, 'length:', length, 'first:', first, 'last:', last)
+        if first < 0:
+            last  = last - first
+            first = 0
+        if last > length - 1:
+            first = first - (last - length)
+            last  = length
+        return first, last
+
         
     def Get1Picture(self):
+        self.n += 1
+        # list idicies
+        DIRNUM  = 1
+        FILENUM = 2
+        if len(self.rows) == 0:
+            # build "DB" of pictures
+            select = 'SELECT rowid, dirNum, fileNum, filename FROM ' + \
+                self.DBtable + ';'
+            self.c.execute(select)
+            for row in self.c:
+                rowid, dirNum, fileNum, filename = row
+                self.rows.append([rowid, dirNum, fileNum])
+                if dirNum not in self.files:
+                    self.files[dirNum] = {}
+                self.files[dirNum][fileNum] = {'myRow' : len(self.rows), 'filename' : filename}
+                if len(self.rows) > 25:
+                    pprint.pprint(self.rows)
+                    pprint.pprint(self.files)
+                    break
+        if len(self.group) == 0:
+            # need a new group of pictures to show
+            selection = random.randint(0, len(self.rows) - 1)
+            print(selection, self.rows[selection])
+            i = 0
+            for fileNo in self.files[dirNum]:
+                print(i, fileNo)
+                if fileNo == self.rows[selection][FILENUM]:
+                    myIdx = i
+                    break
+                i += 1
+            myDirLen = len(self.files[self.rows[selection][DIRNUM]])
+            print('myIdx:', myIdx, 'myDirLen:', myDirLen)
+            first, last = self.getRange(myIdx, myDirLen)
+            print('myIdx:', myIdx, 'myDirLen:', myDirLen, 'first:', first, 'last:', last)
+            for idx in range(0, myDirLen, 3):
+                first, last = self.getRange(idx, myDirLen)
+                print('idx:', idx, 'myDirLen:', myDirLen, 'first:', first, 'last:', last)
+            z = self.n / 0
+            
+            
+    def Get1PictureOld(self):
         self.n += 1
         if len(self.group) == 0:
             #check for a new DB
@@ -191,6 +251,9 @@ class SlideTimer:
         while firstTime < now:
             firstTime += datetime.timedelta(seconds = self.frequency)
         self.starttime = firstTime
+        ############### TESTIMG
+        self.starttime = now + datetime.timedelta(seconds = 2)
+        ###############
         print('showSlide Start time:', self.starttime)
         self.scheduler.enterabs(time.mktime(self.starttime.timetuple()), 1, self.ShowSlide, ())
 
