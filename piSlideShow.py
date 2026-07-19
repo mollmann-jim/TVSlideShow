@@ -32,14 +32,13 @@ class Picture:
         self.c         = self.db.cursor()
         countrows      = 'SELECT COUNT(*) FROM ' + self.DBtable + ';'
         self.c.execute(countrows)
-        self.rows      = self.c.fetchone()[0]
-        print('rows:', self.rows)
-        self.rowsleft  = list(range(1, self.rows))
-        self.i         = 0
+        self.Rows      = self.c.fetchone()[0]
+        print('rows:', self.Rows)
+        self.rowsleft  = list(range(1, self.Rows))
         self.n         = 0
         self.groupSize = 11
         self.group     = []
-        self.rows      = []
+        self.rows      = {}
         self.files     = {}
         #self.rowsleft = list(range(1, 4))
         #self.rowsleft = list(range(20836, 20840))
@@ -91,32 +90,37 @@ class Picture:
         around = int(self.groupSize / 2)
         first = idx - around
         last  = idx + around
-        print('getRange: idx:', idx, 'length:', length, 'first:', first, 'last:', last)
+        #print('getRange: idx:', idx, 'length:', length, 'first:', first, 'last:', last)
         if first < 0:
             last  = last - first
             first = 0
         if last > length - 1:
             first = first - (last - length)
             last  = length
+        print('getRange: idx:', idx, 'length:', length, 'first:', first, 'last:', last)
         return first, last
 
         
     def Get1Picture(self):
         self.n += 1
         # list idicies
-        DIRNUM  = 1
-        FILENUM = 2
+        ROWNUM   = 0
+        DIRFILE  = 1
+        DIRNUM   = 0
+        FILENUM  = 1
         if len(self.rows) == 0:
             # build "DB" of pictures
-            select = 'SELECT rowid, dirNum, fileNum, filename FROM ' + \
+            select = 'SELECT dirNum, fileNum, filename FROM ' + \
                 self.DBtable + ';'
             self.c.execute(select)
+            rowNum = 0
             for row in self.c:
-                rowid, dirNum, fileNum, filename = row
-                self.rows.append([rowid, dirNum, fileNum])
+                dirNum, fileNum, filename = row
+                self.rows[rowNum] = [dirNum, fileNum]
                 if dirNum not in self.files:
                     self.files[dirNum] = {}
-                self.files[dirNum][fileNum] = {'myRow' : len(self.rows), 'filename' : filename}
+                self.files[dirNum][fileNum] = {'rowNum' : rowNum, 'filename' : filename}
+                rowNum += 1
                 if len(self.rows) > 25:
                     pprint.pprint(self.rows)
                     pprint.pprint(self.files)
@@ -124,23 +128,54 @@ class Picture:
         if len(self.group) == 0:
             # need a new group of pictures to show
             selection = random.randint(0, len(self.rows) - 1)
-            print(selection, self.rows[selection])
+            # sel = [ rowNum, [ dirNum, fileNum ] ]
+            sel = list(sorted(self.rows.items()))[selection]
+            print('sel:', sel)
+            rowNum  = sel[ROWNUM]
+            dirNum  = sel[DIRFILE][DIRNUM]
+            fileNum = sel[DIRFILE][FILENUM]
+            print(selection, rowNum, dirNum, fileNum)
             i = 0
             for fileNo in self.files[dirNum]:
                 print(i, fileNo)
-                if fileNo == self.rows[selection][FILENUM]:
+                if fileNo == self.rows[rowNum][FILENUM]:
                     myIdx = i
                     break
                 i += 1
-            myDirLen = len(self.files[self.rows[selection][DIRNUM]])
+            myDirLen = len(self.files[self.rows[rowNum][DIRNUM]])
             print('myIdx:', myIdx, 'myDirLen:', myDirLen)
             first, last = self.getRange(myIdx, myDirLen)
+            i = 0
+            deletes = []
+            for fileNo in self.files[dirNum]:
+                if i >= first and i <= last:
+                    self.group.append(self.files[dirNum][fileNo]['filename'])
+                    rowNum = self.files[dirNum][fileNo]['rowNum']
+                    deletes.append([rowNum, dirNum, fileNo])
+                i += 1
+            print('deletes:', deletes)
+            for rowNum, dirNum, fileNum in deletes:
+                del self.files[dirNum][fileNum]
+                del self.rows[rowNum]
+            print('group:', self.group)
+            pprint.pprint(self.rows)
+            pprint.pprint(self.files)
+            '''
             print('myIdx:', myIdx, 'myDirLen:', myDirLen, 'first:', first, 'last:', last)
             for idx in range(0, myDirLen, 3):
                 first, last = self.getRange(idx, myDirLen)
                 print('idx:', idx, 'myDirLen:', myDirLen, 'first:', first, 'last:', last)
-            z = self.n / 0
-            
+            '''
+        filename = self.group.pop(0)
+        select = 'SELECT image FROM ' + self.DBtable + ' WHERE filename = ? ;'
+        #print(select)
+        self.c.execute(select, (filename,))
+        (image,) = self.c.fetchone()
+        when = datetime.datetime.now().replace(microsecond = 0)
+        #print('{0:^19s}: {1:6d}: {2:5d}: {3:48}'.\
+        #      format(str(when), self.n, filename))
+        print(f'{str(when):^19s}: {self.n:6d} {filename:s}')
+        return (filename, image)            
             
     def Get1PictureOld(self):
         self.n += 1
@@ -210,16 +245,20 @@ class Slide:
         self.pictures   = Picture()
         self.VolumeUp   = True
         self.directory  = '/home/jim/bin/Slides/'
+        self.directory  = '/home/jim/tools/TVSlideShow.py/images/'
         #self.Show1Slide()  #debug
+        self.idx        = 0
         self.debug      = 0
 
     def Show1Slide(self):
-        idx, image = self.pictures.Get1Picture()
-        #print('Show1Slide', idx)
+        (filename, image) = self.pictures.Get1Picture()
+        print('Show1Slide', filename)
         if image is None:
             print('Image is "None". Skipping.')
             return
-        displayFile = self.directory + 'display.' + idx + '.jpg'
+        self.idx += 1
+        idx = self.idx % 20
+        displayFile = self.directory + 'display.' + str(idx) + '.jpg'
         with open(displayFile, 'wb') as display_file:
             size = display_file.write(image)
 
