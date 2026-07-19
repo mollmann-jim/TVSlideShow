@@ -97,7 +97,6 @@ class Picture:
                   'first:', first, 'last:', last)
         return first, last
 
-        
     def Get1Picture(self):
         self.n += 1
         # list idicies
@@ -105,7 +104,7 @@ class Picture:
         DIRFILE  = 1
         DIRNUM   = 0
         FILENUM  = 1
-        
+
         if len(self.rows) == 0:
             # build "DB" of pictures
             select = 'SELECT dirNum, fileNum, filename FROM ' + \
@@ -192,7 +191,6 @@ class Slide:
         else:
             command = 'pkill -TERM fbi'
             doCmd(command)
-        
             command = '/usr/bin/fbi -T 1 --noverbose ' + displayFile
         doCmd(command)
 
@@ -225,7 +223,7 @@ class SlideTimer:
             Power.SetTVPower(self.power)
             self.slides.Show1Slide()
 
-        
+
 class Power:
     def __init__(self, scheduler):
         self.scheduler = scheduler
@@ -234,7 +232,7 @@ class Power:
         self.morningOff = ['07:11', '07:11', '07:11', '07:11', '07:11', '23:27', '23:27']
         self.eveningOn =  ['16:00', '16:00', '16:00', '16:00', '16:00', None, None]
         self.eveningOff = ['22:22', '22:22', '22:22', '22:22', '23:22', None, None]
-        
+
         self.morningOn =  ['06:00', '06:00', '06:00', '06:00', '06:00', '06:00', '06:00']
         self.morningOff = ['22:22', '22:22', '22:22', '22:22', '22:22', '23:27', '23:27']
         self.eveningOn =  ['01:01', '02:02', '03:03', '04:04', '03:33', '02:22', '01:11']
@@ -246,7 +244,7 @@ class Power:
         else:
             command = 'echo standby 0 | cec-client -s -d 1'
         doCmd(command)
-        
+
     def GetPower(self):
         return self.on
 
@@ -257,7 +255,7 @@ class Power:
         self.SetTVPower()
         nextTime = now.replace(second = 0) + datetime.timedelta(weeks = 1)
         self.scheduler.enterabs(time.mktime(nextTime.timetuple()), 1, self.SetPowerOn, ())
-        
+
     def SetPowerOff(self):
         self.on = False
         print('{0:^19s}: Power set off'.format(str(datetime.datetime.now().replace(microsecond = 0))))
@@ -265,7 +263,7 @@ class Power:
         self.SetTVPower()
         nextTime = now.replace(second = 0) + datetime.timedelta(weeks = 1)
         self.scheduler.enterabs(time.mktime(nextTime.timetuple()), 1, self.SetPowerOff, ())
-        
+
     def GetFirstTime(self, now, day, hhmm, action):
         weekday = datetime.datetime.weekday(now)
         days = day - weekday
@@ -282,7 +280,7 @@ class Power:
             return firstTime
         else:
             return None
-        
+
     def Schedule(self):
         self.on = None
         now = datetime.datetime.now()
@@ -306,8 +304,7 @@ class Power:
                     self.on = not on
                     #print('Set', self.on)
         self.SetTVPower()
-            
-        
+
     def ToggleSound(self):
         self.VolumeUp = not self.VolumeUp
         if self.VolumeUp:
@@ -329,19 +326,19 @@ def doCmdRetry(command, trys = 5, delay = 7):
         else:
             print('try:', attempt, ' rc:', rc, ' - ', command)
             time.sleep(delay)
-    
+
 def main():
     scheduler = sched.scheduler(time.time, time.sleep)
     power = Power(scheduler)
     slides = SlideTimer(scheduler, power)
     slides.Schedule(frequency = 1 * 60)
     power.Schedule()
-    
+
     print(len(scheduler.queue))
     #print(scheduler.queue)
     for event in scheduler.queue:
         print(datetime.datetime.fromtimestamp(event.time), str(event.action).split(' ')[2])
-    
+
     scheduler.run()
 
 if __name__ == '__main__':
