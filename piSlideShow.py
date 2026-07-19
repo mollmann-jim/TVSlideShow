@@ -121,10 +121,12 @@ class Picture:
                     self.files[dirNum] = {}
                 self.files[dirNum][fileNum] = {'rowNum' : rowNum, 'filename' : filename}
                 rowNum += 1
+                '''
                 if len(self.rows) > 25:
                     pprint.pprint(self.rows)
                     pprint.pprint(self.files)
                     break
+                '''
         if len(self.group) == 0:
             # need a new group of pictures to show
             selection = random.randint(0, len(self.rows) - 1)
@@ -158,8 +160,10 @@ class Picture:
                 del self.files[dirNum][fileNum]
                 del self.rows[rowNum]
             print('group:', self.group)
+            '''
             pprint.pprint(self.rows)
             pprint.pprint(self.files)
+            '''
             '''
             print('myIdx:', myIdx, 'myDirLen:', myDirLen, 'first:', first, 'last:', last)
             for idx in range(0, myDirLen, 3):
