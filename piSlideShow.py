@@ -21,7 +21,6 @@ class Picture:
     def __init__(self):
         self.directory = '/home/jim/bin/Slides/'
         self.srcIP     = '192.168.123.4'
-        self.DB        = '/home/jim/bin/SlideShow/TVslides.image.sql'
         self.DB        = '/home/jim/tools/TVSlideShow.py/TVSlides.sql'
         self.DBtable   = 'pictures'
         self.DBmtime   = {'sql.new' : 0, 'sql.old' : 0, 'sql' : 0}
@@ -40,9 +39,7 @@ class Picture:
         self.group     = []
         self.rows      = {}
         self.files     = {}
-        #self.rowsleft = list(range(1, 4))
-        #self.rowsleft = list(range(20836, 20840))
-        #print(self.rowsleft)
+        self.debug     = False
 
     def GetDB(self):
         restart = False
@@ -84,20 +81,20 @@ class Picture:
             os.execv(py, args)
 
     def getRange(self, idx, length):
-        #print('getRange: idx:', idx, 'length:', length)
         if length < self.groupSize:
             return 0, length - 1
         around = int(self.groupSize / 2)
         first = idx - around
         last  = idx + around
-        #print('getRange: idx:', idx, 'length:', length, 'first:', first, 'last:', last)
         if first < 0:
             last  = last - first
             first = 0
         if last > length - 1:
             first = first - (last - length)
             last  = length
-        print('getRange: idx:', idx, 'length:', length, 'first:', first, 'last:', last)
+        if self.debug:
+            print('getRange: idx:', idx, 'length:', length, \
+                  'first:', first, 'last:', last)
         return first, last
 
         
@@ -108,6 +105,7 @@ class Picture:
         DIRFILE  = 1
         DIRNUM   = 0
         FILENUM  = 1
+        
         if len(self.rows) == 0:
             # build "DB" of pictures
             select = 'SELECT dirNum, fileNum, filename FROM ' + \
@@ -121,31 +119,26 @@ class Picture:
                     self.files[dirNum] = {}
                 self.files[dirNum][fileNum] = {'rowNum' : rowNum, 'filename' : filename}
                 rowNum += 1
-                '''
-                if len(self.rows) > 25:
-                    pprint.pprint(self.rows)
-                    pprint.pprint(self.files)
-                    break
-                '''
+
         if len(self.group) == 0:
             # need a new group of pictures to show
             selection = random.randint(0, len(self.rows) - 1)
             # sel = [ rowNum, [ dirNum, fileNum ] ]
             sel = list(sorted(self.rows.items()))[selection]
-            print('sel:', sel)
+            if self.debug:
+                print('sel:', sel)
             rowNum  = sel[ROWNUM]
             dirNum  = sel[DIRFILE][DIRNUM]
             fileNum = sel[DIRFILE][FILENUM]
-            print(selection, rowNum, dirNum, fileNum)
+            if self.debug:
+                print(selection, rowNum, dirNum, fileNum)
             i = 0
             for fileNo in self.files[dirNum]:
-                print(i, fileNo)
                 if fileNo == self.rows[rowNum][FILENUM]:
                     myIdx = i
                     break
                 i += 1
             myDirLen = len(self.files[self.rows[rowNum][DIRNUM]])
-            print('myIdx:', myIdx, 'myDirLen:', myDirLen)
             first, last = self.getRange(myIdx, myDirLen)
             i = 0
             deletes = []
@@ -155,29 +148,19 @@ class Picture:
                     rowNum = self.files[dirNum][fileNo]['rowNum']
                     deletes.append([rowNum, dirNum, fileNo])
                 i += 1
-            print('deletes:', deletes)
+            if self.debug:
+                print('deletes:', deletes)
             for rowNum, dirNum, fileNum in deletes:
                 del self.files[dirNum][fileNum]
                 del self.rows[rowNum]
-            print('group:', self.group)
-            '''
-            pprint.pprint(self.rows)
-            pprint.pprint(self.files)
-            '''
-            '''
-            print('myIdx:', myIdx, 'myDirLen:', myDirLen, 'first:', first, 'last:', last)
-            for idx in range(0, myDirLen, 3):
-                first, last = self.getRange(idx, myDirLen)
-                print('idx:', idx, 'myDirLen:', myDirLen, 'first:', first, 'last:', last)
-            '''
+            if self.debug:
+                print('group:', self.group)
+
         filename = self.group.pop(0)
         select = 'SELECT image FROM ' + self.DBtable + ' WHERE filename = ? ;'
-        #print(select)
         self.c.execute(select, (filename,))
         (image,) = self.c.fetchone()
         when = datetime.datetime.now().replace(microsecond = 0)
-        #print('{0:^19s}: {1:6d}: {2:5d}: {3:48}'.\
-        #      format(str(when), self.n, filename))
         print(f'{str(when):^19s}: {self.n:6d} {filename:s}')
         return (filename, image)
 
@@ -188,11 +171,9 @@ class Slide:
         self.resolution = "1920x1080"
         self.pictures   = Picture()
         self.VolumeUp   = True
-        self.directory  = '/home/jim/bin/Slides/'
         self.directory  = '/home/jim/tools/TVSlideShow.py/images/'
-        #self.Show1Slide()  #debug
         self.idx        = 0
-        self.debug      = 0
+        self.debug      = False
 
     def Show1Slide(self):
         (filename, image) = self.pictures.Get1Picture()
@@ -234,9 +215,6 @@ class SlideTimer:
         while firstTime < now:
             firstTime += datetime.timedelta(seconds = self.frequency)
         self.starttime = firstTime
-        ############### TESTIMG
-        self.starttime = now + datetime.timedelta(seconds = 2)
-        ###############
         print('showSlide Start time:', self.starttime)
         self.scheduler.enterabs(time.mktime(self.starttime.timetuple()), 1, self.ShowSlide, ())
 
@@ -268,7 +246,6 @@ class Power:
         else:
             command = 'echo standby 0 | cec-client -s -d 1'
         doCmd(command)
-        #print(command)
         
     def GetPower(self):
         return self.on
@@ -300,7 +277,6 @@ class Power:
                 datetime.timedelta(weeks = 1) + datetime.timedelta(days = days)
             while firstTime < now:
                 firstTime += datetime.timedelta(weeks = 1)
-            #print('G', firstTime, str(action).split(' ')[2], weekday, day, days, hh, mm,)
             event = self.scheduler.enterabs(time.mktime(firstTime.timetuple()), 1, action, ())
             print(datetime.datetime.fromtimestamp(event.time), str(event.action).split(' ')[2])
             return firstTime
@@ -325,7 +301,6 @@ class Power:
             firstTime = self.GetFirstTime(now, day, time, action)
             if firstTime:
                 delta = (firstTime - now).total_seconds() # how far in the future
-                #print('S', str(firstTime), delta, best, str(action).split(' ')[2])
                 if delta >=0 and delta < best:
                     best = delta
                     self.on = not on
@@ -339,13 +314,9 @@ class Power:
             command = '/bin/echo volup | cec-client -s -d 1'
         else:
             command = '/bin/echo voldown | cec-client -s -d 1'
-        ##debug
-        #result = subprocess.run(command, shell = True, stdout = subprocess.PIPE, stderr=subprocess.STDOUT)
-        #print(result.stdout.decode('utf-8'))
 
-def doCmd(command, debug = True):
+def doCmd(command, debug = False):
     if debug: print('doCmd:', command)
-    return 0
     result = subprocess.run(command, shell = True, stdout = subprocess.PIPE, stderr=subprocess.STDOUT)
     if debug: print(result.returncode, ':', result.stdout.decode('utf-8'))
     return result.returncode
