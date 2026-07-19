@@ -175,67 +175,7 @@ class Picture:
         #print('{0:^19s}: {1:6d}: {2:5d}: {3:48}'.\
         #      format(str(when), self.n, filename))
         print(f'{str(when):^19s}: {self.n:6d} {filename:s}')
-        return (filename, image)            
-            
-    def Get1PictureOld(self):
-        self.n += 1
-        if len(self.group) == 0:
-            #check for a new DB
-            self.GetDB()
-            # gather a list of "N" pictures from the same directory. Start with a random image. 
-            selection = random.randint(0, len(self.rowsleft) - 1)
-            #print(selection)
-            id = self.rowsleft[selection]
-            select = 'SELECT filename, rotate, label, location FROM ' + self.DBtable + ' WHERE id = ' + str(id) + ';'
-            #print(select)
-            self.c.execute(select)
-            picture, rotate, label, location = self.c.fetchone()
-            selectLoc = 'SELECT id FROM ' + self.DBtable + ' WHERE location IS "' + location + '";'
-            #print(selectLoc)
-            self.c.row_factory = lambda cursor, row: row[0]
-            self.c.execute(selectLoc)
-            locs = self.c.fetchall()
-            #print(locs)
-            cntLoc = len(locs)
-            self.c.row_factory = None
-            #print("cntLoc =", cntLoc)
-            self.group = [id]
-            myIdx = locs.index(id)
-            #print("cntLoc =", cntLoc, "myIdx = ", myIdx)
-            idx = myIdx
-            # search for unused images from the random image to the end of the directory.
-            while len(self.group) < self.groupSize:
-                idx += 1
-                #print("+idx len(locs)", idx, len(locs))
-                if idx < len(locs):
-                    if locs[idx] in self.rowsleft:
-                        self.group.append(locs[idx])
-                        #print(self.group)
-                else:
-                    break
-            idx = myIdx
-            # search for unused images from the random image toward the beginning of the directory.
-            while len(self.group) < self.groupSize:
-                idx -= 1
-                #print("-idx len(locs)", idx, len(locs))
-                if idx >= 0:
-                    if locs[idx] in self.rowsleft:
-                        self.group.insert(0, locs[idx])
-                        #print(self.group)
-                else:
-                    break
-            #crash = cntLoc / 0
-            print(self.group)
-        id = self.group.pop(0)
-        select = 'SELECT filename, image FROM ' + self.DBtable + ' WHERE id = ? ;'
-        #print(select)
-        self.c.execute(select, (id,))
-        picture, image = self.c.fetchone()            
-        when = datetime.datetime.now().replace(microsecond = 0)
-        print('{0:^19s}: {1:6d}: {2:5d}: {3:48}'.\
-              format(str(when), self.n, id, picture))
-        idx = str(self.i % 20)
-        return (idx, image)
+        return (filename, image)
 
 class Slide:
     # build & display image for screen
