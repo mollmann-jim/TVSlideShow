@@ -288,7 +288,7 @@ class Pictures:
             label += f'FocalLength: {fl:6.1f}\n'
         if metadata.get('focallengthin35mmfilm', False):
             fl = float(Fraction(metadata['focallengthin35mmfilm']))
-            label += f'FocalLength)35mm): {fl:6.1f}\n'
+            label += f'FocalLength(35mm): {fl:6.1f}\n'
         if metadata.get('fnumber', False):
             ap = float(Fraction(metadata['fnumber']))
             label += f'Aperture: {ap:6.1f}\n'
@@ -309,7 +309,7 @@ class Pictures:
             for i in range(len(long)):
                 long[i] = float(Fraction(long[i]))
             ref = metadata.get('gpslongituderef', '')
-            label += f'Longitude: {long[0]:4.0f} {long[1]:3.0f}\' {long[2]:4.1f}" {ref:s}\n'
+            label += f'Longitude: {long[0]:4.0f}\xb0 {long[1]:3.0f}\' {long[2]:4.1f}" {ref:s}\n'
         if metadata.get('gpsaltitude', False):
             alt = float(Fraction(metadata['gpsaltitude']))
             label += f'Altitude: {alt:5.1f} m   {alt * 3.28084:5.1f} \'\n'
@@ -413,35 +413,26 @@ class buildImageDB:
             return False
         resizeImage = result.stdout
         #print('resizeImage:', len(resizeImage))
-        print('addPicture: prelabel:', filename, width, 'x', height)
+        width, height = self.get_jpeg_dimensions_from_bytes(resizeImage)
+        if width > 1720:
+            x = ' WIDE'
+        else:
+            x = ''
+        print('addPicture: prelabel:', filename, width, 'x', height, x)
 
         labelText  = workDir + 'label.txt'
         labelImage = workDir + 'label.jpg'
         with open(labelText, 'w') as Label:
             Label.write(label + '\n')
-        if True:
-            cmd = 'magick -size 200x1080 -background grey  -fill black  '\
-                '-font NimbusSans-Bold -pointsize 11 ' \
-                'label:@' + labelText + ' ' + labelImage
-            result = doCmd(cmd, debug = False)
-            if result.returncode != 0:
-                print('ABORT: addPicture: label image:', filename)
-                print('label:', label)
-                return False
-            slideFile = workDir + 'slide.jpg'
-
-            #cmd = 'magick -background grey - ' + labelImage + ' +append ' + slideFile
-            cmd = 'magick -background grey jpeg:- ' + labelImage + ' +append jpeg:-'
+        if width <= 1720:
+            cmd = 'magick - -background lightblue -fill black '         \
+                ' ( -size 200x label:@' + labelText + ' ) +append -'
+            cmd = 'magick - \\( -background "black" -fill "white" '     \
+                ' -font "NimbusSans-Bold" -pointsize 14 '               \
+                ' -interline-spacing 6 -size 200x -gravity NorthWest  ' \
+                ' caption:@' + labelText + ' \\) +append -'
+            print(cmd)
             result = doCmd(cmd, input = resizeImage)
-            if result.returncode != 0:
-                print('ABORT: addPicture: initial + label image:', filename)
-                print(result.stderr)
-                print('label:', label, len(resizeImage))
-                return False
-            labeledImage = result.stdout
-
-            cmd = 'magick - -resize 1920x1080 -quality 95 jpeg:-'
-            result = doCmd(cmd, input = labeledImage)
             if result.returncode != 0:
                 print('ABORT: addPicture: final image:', filename)
                 return False
