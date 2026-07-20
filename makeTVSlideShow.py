@@ -19,6 +19,8 @@ from fractions import Fraction
 import hashlib
 import random
 from contextlib import suppress
+import io
+import struct
 
 def adapt_datetime(dt):
     return dt.isoformat(sep=' ').replace('T', ' ')
@@ -248,7 +250,8 @@ class Pictures:
 
     def composeLabel(self, filename, metadata):
         label = '\n\n\n\n\n\n\n'
-        label += filename.replace('/', '\n') +'\n\n\n'
+        label = '\n'
+        label += filename.replace('/', '\n') +'\n'
         birthday = time = None
         if metadata.get('datetime', False):
             time     = metadata['datetime']
@@ -318,7 +321,8 @@ class Pictures:
             label += f'Bearing: {dir:4.0f} deg\n'
         if metadata.get('gpsspeed', False):
             spd = float(Fraction(metadata['gpsspeed']))
-            label += f'Speed {spd:4.0f} m/s  {spd:4.0f} mph\n'
+            mph = spd * 2.23694
+            label += f'Speed {spd:4.0f} m/s  {mph:4.0f} mph\n'
         if metadata.get('orientation', False):
             orient = metadata['orientation']
             rotate = self.getRotate(filename)
@@ -339,11 +343,12 @@ class buildImageDB:
         self.debug   = debug
         self.picRoot = '/home/jim/pictures/'
         self.DB      = '/home/jim/tools/TVSlideShow.py/TVSlides.sql'
+        self.DB      = '/home/jim/tools/TVSlideShow.py/TVSlides.test.sql'
         self.DBtable = 'pictures'
         sqlite3.register_adapter(dt.datetime, adapt_datetime)
         sqlite3.register_converter("DATETIME", convert_datetime)
-        self.db = sqlite3.connect(self.DB, detect_types=sqlite3.PARSE_DECLTYPES)
-        self.c = self.db.cursor()
+        self.db      = sqlite3.connect(self.DB, detect_types=sqlite3.PARSE_DECLTYPES)
+        self.c       = self.db.cursor()
         self.initDB()
 
     def initDB(self):
@@ -365,12 +370,14 @@ class buildImageDB:
             ' );'
         self.c.execute(create)
 
-    def addPicture(self, filename, rotate, label, bday, orgImage, dirNum, fileNum):
+    def addPicture(self, filename, rotate, label, bday, orgImage,
+                   dirNum, fileNum, picNum):
         workDir = '/tmp/'
         #workDir = '/home/jim/tools/TVSlideShow.py/test.out/'
-        insert = 'INSERT OR REPLACE INTO ' + self.DBtable + ' ( \n'    \
+        insert = 'INSERT OR REPLACE INTO ' + self.DBtable + ' (    \n' \
             ' filename, rotate, inode, md5sum, birthday, filesize, \n' \
-            ' label, dirNum, fileNum, image) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?);'
+            ' label, dirNum, fileNum, image)                       \n' \
+            ' VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?);'
         fullname = self.picRoot + filename
         stat = os.stat(fullname)
         md5sum = hashlib.md5(orgImage).hexdigest()
@@ -391,11 +398,13 @@ class buildImageDB:
             imageNum = '[0]'
         else:
             imageNum = ''
+        resize = ' -resize 1720x1080 '
+        resize = ' -resize 1920x1080 '
         if isPEF:
-            cmd = 'magick PEF:- -auto-orient ' + rotate + '-resize 1720x1080' + \
+            cmd = 'magick PEF:- -auto-orient ' + rotate + resize  + \
             ' -quality 95 jpeg:-'
         else:
-            cmd = 'magick -' + imageNum + ' -auto-orient ' + rotate + '-resize 1720x1080' + \
+            cmd = 'magick -' + imageNum + ' -auto-orient ' + rotate + resize  + \
                 ' -quality 95 jpeg:-'
         result = doCmd(cmd, debug = False, input = orgImage)
 
@@ -404,40 +413,86 @@ class buildImageDB:
             return False
         resizeImage = result.stdout
         #print('resizeImage:', len(resizeImage))
-        
+        print('addPicture: prelabel:', filename, width, 'x', height)
+
         labelText  = workDir + 'label.txt'
         labelImage = workDir + 'label.jpg'
         with open(labelText, 'w') as Label:
             Label.write(label + '\n')
-        cmd = 'magick -size 200x1080 -background grey  -fill black  -font NimbusSans-Bold '\
-            '-pointsize 11 label:@' + labelText + ' ' + labelImage
-        result = doCmd(cmd, debug = False)
-        if result.returncode != 0:
-            print('ABORT: addPicture: label image:', filename)
-            print('label:', label)
-            return False
-        slideFile = workDir + 'slide.jpg'
+        if True:
+            cmd = 'magick -size 200x1080 -background grey  -fill black  '\
+                '-font NimbusSans-Bold -pointsize 11 ' \
+                'label:@' + labelText + ' ' + labelImage
+            result = doCmd(cmd, debug = False)
+            if result.returncode != 0:
+                print('ABORT: addPicture: label image:', filename)
+                print('label:', label)
+                return False
+            slideFile = workDir + 'slide.jpg'
 
-        #cmd = 'magick -background grey - ' + labelImage + ' +append ' + slideFile
-        cmd = 'magick -background grey jpeg:- ' + labelImage + ' +append jpeg:-'
-        result = doCmd(cmd, input = resizeImage)
-        if result.returncode != 0:
-            print('ABORT: addPicture: initial + label image:', filename)
-            print(result.stderr)
-            print('label:', label, len(resizeImage))
-            return False
-        labeledImage = result.stdout
+            #cmd = 'magick -background grey - ' + labelImage + ' +append ' + slideFile
+            cmd = 'magick -background grey jpeg:- ' + labelImage + ' +append jpeg:-'
+            result = doCmd(cmd, input = resizeImage)
+            if result.returncode != 0:
+                print('ABORT: addPicture: initial + label image:', filename)
+                print(result.stderr)
+                print('label:', label, len(resizeImage))
+                return False
+            labeledImage = result.stdout
 
-        cmd = 'magick - -resize 1920x1080 -quality 95 jpeg:-'
-        result = doCmd(cmd, input = labeledImage)
-        if result.returncode != 0:
-            print('ABORT: addPicture: final image:', filename)
-            return False
+            cmd = 'magick - -resize 1920x1080 -quality 95 jpeg:-'
+            result = doCmd(cmd, input = labeledImage)
+            if result.returncode != 0:
+                print('ABORT: addPicture: final image:', filename)
+                return False
+        else:
+            cmd = 'magick - -font NimbusSans-Bold -pointsize 12 -fill white' \
+                ' -stroke black -strokewidth 1 -gravity NorthEast '\
+                ' -annotate +0+0 @' + labelText + ' - '
+            result = doCmd(cmd, input = resizeImage)
+            if result.returncode != 0:
+                print('ABORT: addPicture: final annotated image:', filename)
+                return False
         image = result.stdout
 
         update = 'UPDATE ' + self.DBtable + ' SET image = ? WHERE filename = ? ;'
         self.c.execute(update, [image, filename])
         self.db.commit()
+        width, height = self.get_jpeg_dimensions_from_bytes(image)
+        print('addPicture: finished:', filename, width, 'x', height)
+        if True:
+            testFile = f'{workDir:s}{picNum:06d}.jpg'
+            with open(testFile, 'wb') as Image:
+                Image.write(image)
+                
+    def get_jpeg_dimensions_from_bytes(self, jpeg_bytes: bytes):
+        # Parse a JPEG byte string to determine the pixel dimensions (width, height).
+        # FRom Google AI
+        stream = io.BytesIO(jpeg_bytes)
+        # 1. Verify JPEG SOI (Start of Image) marker: \xff\xd8
+        if stream.read(2) != b'\xff\xd8':
+            raise ValueError("Not a valid JPEG file.")
+        while True:
+            # 2. Read the segment marker (usually \xff followed by a marker byte)
+            marker = stream.read(2)
+            if not marker or marker[0] != 0xff:
+                break
+            marker_type = marker[1]
+            # 3. Check for Start of Frame (SOF) markers (SOF0 to SOF2)
+            if 0xc0 <= marker_type <= 0xc2:
+                # Skip segment length (2 bytes) and precision (1 byte)
+                stream.read(3)
+                # Read Height and Width (2 bytes each, big-endian unsigned short)
+                height, width = struct.unpack('>HH', stream.read(4))
+                return width, height
+            # 4. Skip over non-SOF segments by reading their length
+            else:
+                length_bytes = stream.read(2)
+                if not length_bytes:
+                    break
+                segment_length = struct.unpack('>H', length_bytes)[0]
+                stream.seek(segment_length - 2, io.SEEK_CUR)
+
         
 def doCmd(command, printFailure = True, debug = False, input = None):
     if debug:
@@ -477,24 +532,24 @@ def doCmdRetry(command, trys = 5, delay = 7):
 def main():
     debug       = True
     pictureRoot = '/home/jim/pictures/'
-    pictures = Pictures(pictureRoot, debug)
+    pictures    = Pictures(pictureRoot, debug)
     #pictures.picRoot = '/home/jim/pictures/Edgecliff/Edgecliff friends/'
-    picList  = pictures.getPictureFiles()
+    picList     = pictures.getPictureFiles()
     #pictures.countLabelsNone)
     
-    build    = buildImageDB(pictureRoot, debug)
-    i = -1
-    skip = 999999
-    skip = 10000
-    skip = 1
-    dirNum = 0
+    build       = buildImageDB(pictureRoot, debug)
+    picNum      = -1
+    skip        = 999999
+    #skip        = 10000
+    #skip        = 1
+    dirNum      = 0
     for dir in sorted(picList):
         dirNum += 1
         fileNum = 0
         for file in sorted(picList[dir]):
             fileNum +=1
-            i += 1
-            if i % skip != 0:
+            picNum += 1
+            if picNum % skip != 0:
                 continue
             filename = dir + file
             #print(f'{i:6d} : {filename:s}')
@@ -511,7 +566,8 @@ def main():
             
             rotate = pictures.getRotate(filename)
             #continue
-            build.addPicture(filename, rotate, label, bday, orgImage, dirNum, fileNum)
+            build.addPicture(filename, rotate, label, bday, orgImage, dirNum, fileNum, picNum)
+                
     
 if __name__ == '__main__':
     # want unbuffered stdout for use with "tee"
