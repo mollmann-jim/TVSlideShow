@@ -43,7 +43,7 @@ class Picture:
 
     def GetDB(self):
         restart = False
-        debug = False
+        debug = True
         DBbase = '.'.join(self.DB.split('.')[0 : -1]) + '.'
         for suffix in self.DBmtime.keys():
             db = DBbase + suffix
@@ -120,6 +120,8 @@ class Picture:
                 rowNum += 1
 
         if len(self.group) == 0:
+            #check for a new DB
+            self.GetDB()
             # need a new group of pictures to show
             selection = random.randint(0, len(self.rows) - 1)
             # sel = [ rowNum, [ dirNum, fileNum ] ]
@@ -176,7 +178,7 @@ class Slide:
 
     def Show1Slide(self):
         (filename, image) = self.pictures.Get1Picture()
-        print('Show1Slide', filename)
+        #print('Show1Slide', filename)
         if image is None:
             print('Image is "None". Skipping.')
             return
