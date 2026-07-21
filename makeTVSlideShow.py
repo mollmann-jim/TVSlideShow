@@ -249,7 +249,6 @@ class Pictures:
         return metadata
 
     def composeLabel(self, filename, metadata):
-        label = '\n\n\n\n\n\n\n'
         label = '\n'
         label += filename.replace('/', '\n') +'\n'
         birthday = time = None
@@ -343,13 +342,13 @@ class buildImageDB:
         self.debug   = debug
         self.picRoot = '/home/jim/pictures/'
         self.DB      = '/home/jim/tools/TVSlideShow.py/TVSlides.sql'
-        self.DB      = '/home/jim/tools/TVSlideShow.py/TVSlides.test.sql'
         self.DBtable = 'pictures'
         sqlite3.register_adapter(dt.datetime, adapt_datetime)
         sqlite3.register_converter("DATETIME", convert_datetime)
         self.db      = sqlite3.connect(self.DB, detect_types=sqlite3.PARSE_DECLTYPES)
         self.c       = self.db.cursor()
         self.initDB()
+        self.imgFail = 0
 
     def initDB(self):
         if self.debug:
@@ -382,15 +381,17 @@ class buildImageDB:
         stat = os.stat(fullname)
         md5sum = hashlib.md5(orgImage).hexdigest()
 
-        print('addPicture:', filename, rotate, bday, stat.st_ino,
+        print('addPicture:', picNum, filename, rotate, bday, stat.st_ino,
               stat.st_size, md5sum, rotate)
+        '''
         values = [filename, rotate, stat.st_ino, md5sum, bday,
                   stat.st_size, label, dirNum, fileNum, None]
-        self.c.execute(insert, values)
-        self.db.commit()
+        '''
+        values = [filename, rotate, stat.st_ino, md5sum, bday,
+                  stat.st_size, label, dirNum, fileNum]
+        #self.c.execute(insert, values)
+        #self.db.commit()
 
-        tgtFile  = workDir + 'slideOut.jpg'
-        tgtFile2  = workDir + 'slideOut-0.jpg'
         ext = filename.split('.')[-1].lower()
         isPEF =  ext == 'pef'
         # -auto-orient and/or rotate???
@@ -398,7 +399,6 @@ class buildImageDB:
             imageNum = '[0]'
         else:
             imageNum = ''
-        resize = ' -resize 1720x1080 '
         resize = ' -resize 1920x1080 '
         if isPEF:
             cmd = 'magick PEF:- -auto-orient ' + rotate + resize  + \
@@ -410,48 +410,55 @@ class buildImageDB:
 
         if result.returncode != 0:
             print('ABORT: addPicture: initial image:', filename)
+            self.imgFail += 1
             return False
         resizeImage = result.stdout
         #print('resizeImage:', len(resizeImage))
         width, height = self.get_jpeg_dimensions_from_bytes(resizeImage)
+        '''
+        #### testing ####
         if width > 1720:
             x = ' WIDE'
         else:
             x = ''
-        print('addPicture: prelabel:', filename, width, 'x', height, x)
+        print('addPicture: prelabel:', picNum, filename, width, 'x', height, x)
+        '''
 
         labelText  = workDir + 'label.txt'
-        labelImage = workDir + 'label.jpg'
         with open(labelText, 'w') as Label:
             Label.write(label + '\n')
         if width <= 1720:
-            cmd = 'magick - -background lightblue -fill black '         \
-                ' ( -size 200x label:@' + labelText + ' ) +append -'
             cmd = 'magick - \\( -background "black" -fill "white" '     \
                 ' -font "NimbusSans-Bold" -pointsize 14 '               \
                 ' -interline-spacing 6 -size 200x -gravity NorthWest  ' \
                 ' caption:@' + labelText + ' \\) +append -'
-            print(cmd)
             result = doCmd(cmd, input = resizeImage)
             if result.returncode != 0:
                 print('ABORT: addPicture: final image:', filename)
+                self.imgFail += 1
                 return False
         else:
-            cmd = 'magick - -font NimbusSans-Bold -pointsize 12 -fill white' \
+            cmd = 'magick - -font NimbusSans-Bold -pointsize 20 -fill red' \
                 ' -stroke black -strokewidth 1 -gravity NorthEast '\
                 ' -annotate +0+0 @' + labelText + ' - '
             result = doCmd(cmd, input = resizeImage)
             if result.returncode != 0:
                 print('ABORT: addPicture: final annotated image:', filename)
+                self.imgFail += 1
                 return False
         image = result.stdout
 
+        '''
         update = 'UPDATE ' + self.DBtable + ' SET image = ? WHERE filename = ? ;'
         self.c.execute(update, [image, filename])
         self.db.commit()
+        '''
+        values.append(image)
+        self.c.execute(insert, values)
+        self.db.commit()
         width, height = self.get_jpeg_dimensions_from_bytes(image)
-        print('addPicture: finished:', filename, width, 'x', height)
-        if True:
+        print('addPicture: finished:', picNum, filename, width, 'x', height)
+        if False:
             testFile = f'{workDir:s}{picNum:06d}.jpg'
             with open(testFile, 'wb') as Image:
                 Image.write(image)
@@ -530,9 +537,9 @@ def main():
     
     build       = buildImageDB(pictureRoot, debug)
     picNum      = -1
-    skip        = 999999
+    #skip        = 999999
     #skip        = 10000
-    #skip        = 1
+    skip        = 1
     dirNum      = 0
     for dir in sorted(picList):
         dirNum += 1
