@@ -414,7 +414,12 @@ class buildImageDB:
             return False
         resizeImage = result.stdout
         #print('resizeImage:', len(resizeImage))
-        width, height = self.get_jpeg_dimensions_from_bytes(resizeImage)
+        try:
+            width, height = self.get_jpeg_dimensions_from_bytes(resizeImage)
+        except ValueError:
+            print('ABORT: addPicture: get_jpeg_dimensions_from_bytes:', filename)
+            self.imgFail += 1
+            return False
         '''
         #### testing ####
         if width > 1720:
@@ -456,8 +461,8 @@ class buildImageDB:
         values.append(image)
         self.c.execute(insert, values)
         self.db.commit()
-        width, height = self.get_jpeg_dimensions_from_bytes(image)
-        print('addPicture: finished:', picNum, filename, width, 'x', height)
+        #width, height = self.get_jpeg_dimensions_from_bytes(image)
+        #print('addPicture: finished:', picNum, filename, width, 'x', height)
         if False:
             testFile = f'{workDir:s}{picNum:06d}.jpg'
             with open(testFile, 'wb') as Image:
