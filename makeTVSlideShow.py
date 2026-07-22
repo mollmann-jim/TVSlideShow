@@ -205,8 +205,6 @@ class Pictures:
                 labels[dir + file] = self.composeLabel(dir + file, labelData)
                 
     def getLabel(self, filename, orgImage):
-        #meta = self.getLabelData(filename)
-        #print('getLabel:', filename, len(orgImage), type(orgImage))
         meta = self.getLabelData(filename, orgImage)
         label = self.composeLabel(filename, meta)
         return label
@@ -372,7 +370,6 @@ class buildImageDB:
     def addPicture(self, filename, rotate, label, bday, orgImage,
                    dirNum, fileNum, picNum):
         workDir = '/tmp/'
-        #workDir = '/home/jim/tools/TVSlideShow.py/test.out/'
         insert = 'INSERT OR REPLACE INTO ' + self.DBtable + ' (    \n' \
             ' filename, rotate, inode, md5sum, birthday, filesize, \n' \
             ' label, dirNum, fileNum, image)                       \n' \
@@ -383,14 +380,8 @@ class buildImageDB:
 
         print('addPicture:', picNum, filename, rotate, bday, stat.st_ino,
               stat.st_size, md5sum, rotate)
-        '''
-        values = [filename, rotate, stat.st_ino, md5sum, bday,
-                  stat.st_size, label, dirNum, fileNum, None]
-        '''
         values = [filename, rotate, stat.st_ino, md5sum, bday,
                   stat.st_size, label, dirNum, fileNum]
-        #self.c.execute(insert, values)
-        #self.db.commit()
 
         ext = filename.split('.')[-1].lower()
         isPEF =  ext == 'pef'
@@ -413,21 +404,12 @@ class buildImageDB:
             self.imgFail += 1
             return False
         resizeImage = result.stdout
-        #print('resizeImage:', len(resizeImage))
         try:
             width, height = self.get_jpeg_dimensions_from_bytes(resizeImage)
         except ValueError:
             print('ABORT: addPicture: get_jpeg_dimensions_from_bytes:', filename)
             self.imgFail += 1
             return False
-        '''
-        #### testing ####
-        if width > 1720:
-            x = ' WIDE'
-        else:
-            x = ''
-        print('addPicture: prelabel:', picNum, filename, width, 'x', height, x)
-        '''
 
         labelText  = workDir + 'label.txt'
         with open(labelText, 'w') as Label:
@@ -452,17 +434,9 @@ class buildImageDB:
                 self.imgFail += 1
                 return False
         image = result.stdout
-
-        '''
-        update = 'UPDATE ' + self.DBtable + ' SET image = ? WHERE filename = ? ;'
-        self.c.execute(update, [image, filename])
-        self.db.commit()
-        '''
         values.append(image)
         self.c.execute(insert, values)
         self.db.commit()
-        #width, height = self.get_jpeg_dimensions_from_bytes(image)
-        #print('addPicture: finished:', picNum, filename, width, 'x', height)
         if False:
             testFile = f'{workDir:s}{picNum:06d}.jpg'
             with open(testFile, 'wb') as Image:
@@ -556,19 +530,13 @@ def main():
                 continue
             filename = dir + file
             #print(f'{i:6d} : {filename:s}')
-            '''
-            ext = filename.split('/')[-1]
-            if ext != 'IMGP1559.PEF':
-                continue
-            '''
-            with open(pictureRoot + filename, 'rb') as image_file:
-                orgImage = image_file.read()
-            label, bday = pictures.getLabel(filename, orgImage)
-            
-            #label, bday = pictures.getLabel(filename)
-            
+            try:
+                with open(pictureRoot + filename, 'rb') as image_file:
+                    orgImage = image_file.read()
+                    label, bday = pictures.getLabel(filename, orgImage)
+            except Exception as e:
+                print('ABORT: Failed initial read', filename, e)
             rotate = pictures.getRotate(filename)
-            #continue
             build.addPicture(filename, rotate, label, bday, orgImage, dirNum, fileNum, picNum)
                 
     
