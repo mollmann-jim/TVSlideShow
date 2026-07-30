@@ -223,9 +223,10 @@ class Pictures:
             cmd = 'magick identify -verbose -'
             #print('getLabelData:', cmd)
             result = doCmd(cmd, input = orgImage)
-        kv_regex = re.compile(r"^\s+([\w\s]+):\s*(.*)$")
+        kv_regex = re.compile(r"^\s+([\w\s\.]+):\s*(.*)$")
         metadata = {}
         for line in result.stdout.splitlines():
+            #print('line:', line)
             try:
                 line = line.decode('utf-8').replace('date:', '').replace('dng:', '')
                 line = line.replace('exif:', '').replace('jpeg:', '')
@@ -238,16 +239,19 @@ class Pictures:
                     char = bytes.fromhex(word)
                     print(word, ' : ', char)
                 continue
+            #print('B4 match:', line)
             match = kv_regex.match(line)
             if match:
                 # clean up keys and store values
                 key = match.group(1).strip().lower().replace(" ", "_")
                 value = match.group(2).strip()
                 metadata[key] = value
+                #print('match:', line, key, value)
+        #pprint.pprint(metadata)
         return metadata
 
     def composeLabel(self, filename, metadata):
-        label = '\n'
+        label = '\n\n '
         label += filename.replace('/', '\n') +'\n'
         birthday = time = None
         if metadata.get('datetime', False):
@@ -276,50 +280,71 @@ class Pictures:
         if time is not None:
             label += time + '\n\n'
         if metadata.get('shutterspeedvalue', False):
-            ss = float(Fraction(metadata['shutterspeedvalue']))
-            label += f'ShutterSpeed: {ss:7.4f}\n'
+            ss     = 2.0 ** float(Fraction(metadata['shutterspeedvalue']))
+            label += f' ShutterSpeed: 1 / {ss:7.3f}\n'
         if metadata.get('photographicsensitivity', False):
-            label += 'ISO: ' + metadata['photographicsensitivity'] + '\n'
+            iso    = metadata['photographicsensitivity']
+            label += f' ISO: {iso:s} \n'
+        if metadata.get('iso.setting', False):
+            iso    = float(metadata['iso.setting'])
+            label += f' ISO: {iso:5.0f} \n'
         if metadata.get('focallength', False):
-            fl = float(Fraction(metadata['focallength']))
-            label += f'FocalLength: {fl:6.1f}\n'
+            fl     = float(Fraction(metadata['focallength']))
+            label += f' FocalLength: {fl:6.1f}\n'
+        if metadata.get('focal.length', False):
+            fl     = float(metadata['focal.length'].split()[0])
+            mm     = metadata['focal.length'].split()[1]
+            label += f' FocalLength: {fl:6.1f} {mm:s}\n'
         if metadata.get('focallengthin35mmfilm', False):
-            fl = float(Fraction(metadata['focallengthin35mmfilm']))
-            label += f'FocalLength(35mm): {fl:6.1f}\n'
+            fl     = float(Fraction(metadata['focallengthin35mmfilm']))
+            label += f' FocalLength(35mm): {fl:6.1f}\n'
+        if metadata.get('focal.length.in.35mm.format', False):
+            fl     = float(metadata['focal.length.in.35mm.format'].split()[0])
+            mm     = metadata['focal.length.in.35mm.format'].split()[1]
+            label += f' FocalLength(35mm): {fl:6.1f} {mm:s}\n'
         if metadata.get('fnumber', False):
-            ap = float(Fraction(metadata['fnumber']))
-            label += f'Aperture: {ap:6.1f}\n'
+            ap     = float(Fraction(metadata['fnumber']))
+            label += f' Aperture: {ap:6.1f}\n'
+        if metadata.get('f.number', False):
+            ap     = float(metadata['f.number'])
+            label += f' Aperture: {ap:6.1f}\n'
         if metadata.get('exposuretime', False):
-            label += f'Exposure: {metadata['exposuretime']:s}s\n'
+            label += f' Exposure: {metadata['exposuretime']:s}s\n'
+        if metadata.get('exposure.time', False):
+            # print('exposure.time:', metadata['exposure.time'])
+            exp    = float(metadata['exposure.time'].split('/')[1])
+            label += f' Exposure: 1 / {exp:5.0f}s\n'
         if metadata.get('make', False):
-            label += f'Make: {metadata['make']:s}\n'
+            label += f' Make: {metadata['make']:s}\n'
+        if metadata.get('model', False):
+            label += f' Model: {metadata['model']:s}\n'
         if metadata.get('lensmodel', False):
-            label += f'Lens: {metadata['lensmodel']:s}\n'
+            label += f' Lens: {metadata['lensmodel']:s}\n'
         if metadata.get('gpslatitude', False):
-            lat = [deg, min, sec] = metadata['gpslatitude'].split(',')
+            lat    = [deg, min, sec] = metadata['gpslatitude'].split(',')
             for i in range(len(lat)):
                 lat[i] = float(Fraction(lat[i]))
             ref = metadata.get('gpslatituderef', '')
-            label += f'Latitude:  {lat[0]:4.0f} {lat[1]:3.0f}\' {lat[2]:4.1f}" {ref:s}\n'
+            label += f' Latitude:  {lat[0]:4.0f} {lat[1]:3.0f}\' {lat[2]:4.1f}" {ref:s}\n'
         if metadata.get('gpslongitude', False):
-            long = [deg, min, sec] = metadata['gpslongitude'].split(',')
+            long   = [deg, min, sec] = metadata['gpslongitude'].split(',')
             for i in range(len(long)):
                 long[i] = float(Fraction(long[i]))
             ref = metadata.get('gpslongituderef', '')
-            label += f'Longitude: {long[0]:4.0f}\xb0 {long[1]:3.0f}\' {long[2]:4.1f}" {ref:s}\n'
+            label += f' Longitude: {long[0]:4.0f}\xb0 {long[1]:3.0f}\' {long[2]:4.1f}" {ref:s}\n'
         if metadata.get('gpsaltitude', False):
-            alt = float(Fraction(metadata['gpsaltitude']))
-            label += f'Altitude: {alt:5.1f} m   {alt * 3.28084:5.1f} \'\n'
+            alt    = float(Fraction(metadata['gpsaltitude']))
+            label += f' Altitude: {alt:5.1f} m   {alt * 3.28084:5.1f} \'\n'
         if metadata.get('gpsimgdirection', False):
-            dir = float(Fraction(metadata['gpsimgdirection']))
-            label += f'Image Direction: {dir:4.0f} deg\n'
+            dir    = float(Fraction(metadata['gpsimgdirection']))
+            label += f' Image Direction: {dir:4.0f} deg\n'
         if metadata.get('gpsdestbearinggpsimg', False):
-            dir = float(Fraction(metadata['gpsdestbearing']))
-            label += f'Bearing: {dir:4.0f} deg\n'
+            dir    = float(Fraction(metadata['gpsdestbearing']))
+            label += f' Bearing: {dir:4.0f} deg\n'
         if metadata.get('gpsspeed', False):
-            spd = float(Fraction(metadata['gpsspeed']))
-            mph = spd * 2.23694
-            label += f'Speed {spd:4.0f} m/s  {mph:4.0f} mph\n'
+            spd    = float(Fraction(metadata['gpsspeed']))
+            mph    = spd * 2.23694
+            label += f' Speed {spd:4.0f} m/s  {mph:4.0f} mph\n'
         if metadata.get('orientation', False):
             orient = metadata['orientation']
             rotate = self.getRotate(filename)
@@ -333,6 +358,7 @@ class Pictures:
                 print('Double fixup orientation:', orient, 'rotate:', rotate, filename)
             else:
                 print('Conflicting fixup orientation:', orient, 'rotate:', rotate, filename)
+        #print(label)
         return label, birthday
 
 class buildImageDB:
