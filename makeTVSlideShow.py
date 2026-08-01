@@ -213,7 +213,7 @@ class Pictures:
         self.pp = pprint.PrettyPrinter(indent=4, sort_dicts=False)
         ext = filename.split('.')[-1].lower()
         isPEF =  ext == 'pef'
-        if orgImage is None or isPEF:
+        if orgImage is None:
             cmd = 'magick identify -verbose "' + self.picRoot + filename + '"'
             result = doCmd(cmd)
         elif isPEF:
@@ -262,10 +262,10 @@ class Pictures:
             time     = metadata['modify']
             with suppress(ValueError):
                 birthday = dt.datetime.strptime(time, '%Y-%m-%dT%H:%M:%S+00:00')
-        if birthday is None and metadata.get('filemodifydate', False):
-            time     = metadata['filemodifydate']
+        if birthday is None and metadata.get('modifydate', False):
+            time     = metadata['modifydate']
             with suppress(ValueError):
-                birthday = 'filemodifydate' + metadata['filemodifydate']
+                birthday = dt.datetime.strptime(time, '%Y-%m-%dT%H:%M:%S+00:00'
         if birthday is None and metadata.get('create', False): 
             time     = metadata['create']
             with suppress(ValueError):
@@ -470,10 +470,12 @@ class buildImageDB:
                 
     def get_jpeg_dimensions_from_bytes(self, jpeg_bytes: bytes):
         # Parse a JPEG byte string to determine the pixel dimensions (width, height).
-        # FRom Google AI
+        # From Google AI
         stream = io.BytesIO(jpeg_bytes)
         # 1. Verify JPEG SOI (Start of Image) marker: \xff\xd8
         if stream.read(2) != b'\xff\xd8':
+            stream.seek(0)
+            print('get_jpeg_dimensions_from_bytes:', stream.read(2))
             raise ValueError("Not a valid JPEG file.")
         while True:
             # 2. Read the segment marker (usually \xff followed by a marker byte)
@@ -559,7 +561,7 @@ def main():
             try:
                 with open(pictureRoot + filename, 'rb') as image_file:
                     orgImage = image_file.read()
-                    label, bday = pictures.getLabel(filename, orgImage)
+                label, bday = pictures.getLabel(filename, orgImage)
             except Exception as e:
                 print('ABORT: Failed initial read', filename, e)
             rotate = pictures.getRotate(filename)
