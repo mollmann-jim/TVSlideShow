@@ -33,17 +33,18 @@ class Picture:
         self.c.execute(countrows)
         self.Rows      = self.c.fetchone()[0]
         print('rows:', self.Rows)
-        self.rowsleft  = list(range(1, self.Rows))
+        #self.rowsleft  = list(range(1, self.Rows))
         self.n         = 0
         self.groupSize = 11
         self.group     = []
         self.rows      = {}
         self.files     = {}
+        self.totalDirs = 0
         self.debug     = False
 
     def GetDB(self):
         restart = False
-        debug = True
+        debug = False
         DBbase = '.'.join(self.DB.split('.')[0 : -1]) + '.'
         for suffix in self.DBmtime.keys():
             db = DBbase + suffix
@@ -118,6 +119,7 @@ class Picture:
                     self.files[dirNum] = {}
                 self.files[dirNum][fileNum] = {'rowNum' : rowNum, 'filename' : filename}
                 rowNum += 1
+            self.totalDirs = rowNum - 1
 
         if len(self.group) == 0:
             #check for a new DB
@@ -163,15 +165,27 @@ class Picture:
         (image,) = self.c.fetchone()
         when = datetime.datetime.now().replace(microsecond = 0)
         print(f'{str(when):^19s}: {self.n:6d} {filename:s}')
+        self.showStats(when)
         return (filename, image)
+
+    def showStats(self, when):
+        if when.minute > 0:
+            return
+        picsLeft = 0
+        for dir in self.files:
+            picsLeft += len(self.files[dir])
+        picsLeft += len(self.group)
+        print(f'{str(when):^19s}: {picsLeft:6d} of {self.Rows:6d} pictures remain')
+        print(f'{" ":^19s}: {len(self.files):6d} of {self.totalDirs:6d} directories remain')
+
 
 class Slide:
     # build & display image for screen
     # new image every 5 minutes, if needed
     def __init__(self,):
-        self.resolution = "1920x1080"
+        #self.resolution = "1920x1080"
         self.pictures   = Picture()
-        self.VolumeUp   = True
+        #self.VolumeUp   = True
         self.directory  = '/home/jim/tools/TVSlideShow.py/images/'
         self.idx        = 0
         self.debug      = False
@@ -306,14 +320,14 @@ class Power:
                     self.on = not on
                     #print('Set', self.on)
         self.SetTVPower()
-
+    '''
     def ToggleSound(self):
         self.VolumeUp = not self.VolumeUp
         if self.VolumeUp:
             command = '/bin/echo volup | cec-client -s -d 1'
         else:
             command = '/bin/echo voldown | cec-client -s -d 1'
-
+    '''
 def doCmd(command, debug = False):
     if debug: print('doCmd:', command)
     result = subprocess.run(command, shell = True, stdout = subprocess.PIPE, stderr=subprocess.STDOUT)
