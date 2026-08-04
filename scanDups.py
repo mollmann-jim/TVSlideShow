@@ -58,8 +58,11 @@ class Images:
             self.resize = ' -resize 32x32 '
             
     def toBMP(self, filename):
-        with open(filename, 'rb') as imageFile:
-            image = imageFile.read()
+        try:
+            with open(filename, 'rb') as imageFile:
+                image = imageFile.read()
+        except:
+            return None
         ext = filename.split('.')[-1].lower()
         isPEF =  ext == 'pef'
         isTIF =  ext == 'tif'
@@ -103,10 +106,9 @@ class Images:
 
     def pixelCompare(self, x, y):
         if x == y:
-            return 0
+            return 'match'
         if len(x) != len(y):
-            print('Images:pixelCompare unequal lengths:', len(x), len(y))
-            return -1
+            return f'length diff {len(x):8d} != {len(y):7d}'
         diff = 0
         for i in range(len(x)):
             #print(i, x[i], y[i])
@@ -140,8 +142,20 @@ def doCmd(command, printFailure = True, debug = False, input = None):
     if debug:
         print('doCmd:result:', result)
     return result
-    
 
+def doMV(src, dst):
+    cmd = f'mv "{src:s}" "{dst:s}"'
+    print('CMD:', cmd)
+    doCmd(cmd)
+
+def moveFromiPhone(a, b):
+    iPhoneAll = '2026.06.21.All.iPhone'
+    if iPhoneAll in a:
+        return True, a, b
+    if iPhoneAll in b:
+        return True, b, a
+    return False, a, b
+    
     
 def main():
     db = DB()
@@ -151,37 +165,43 @@ def main():
     for fileList in iter(db.nextBDay, None):
         #print(len(fileList),fileList )
         cnt += 1
-        if cnt > 5:
+        if cnt > 1000000:
             break
         pixels = []
+        fileCnt = 0
+        for fileName in fileList:
+            if os.path.isfile(fileName):
+                fileCnt += 1
+        if fileCnt < 2:
+            continue
         for fileName in fileList:
             bmp = image.toBMP(fileName)
-            pixel = image.bmp2Pixels(bmp)
-            pixels.append(pixel)
-            #print('m-1:', len(pixels[-1]), fileName)
-            #print('0  :', len(pixels[0]), fileName)
-            #print(len(bmp), len(pixel), fileName)
-        #print(len(pixels[0]))
-        #print(len(pixels[1]))
+            if bmp is not None:
+                pixel = image.bmp2Pixels(bmp)
+                pixels.append(pixel)
         for i in range(len(pixels)):
             for j in range(i + 1, len(pixels)):
                 result = image.pixelCompare(pixels[i], pixels[j])
-                print(i, j, fileList[i], fileList[j], result)
-        
-        
-        
-    '''
-    if len(sys.argv) > 1:
-        fileName = sys.argv[1]
-    else:
-        fileName = 'foo.bmp'
-    
-    with open(fileName, 'rb') as image_file:
-        image = image_file.read()
-    print(len(image))
-    extract_image_from_bmp(image)
-    '''
-
+                iFile = fileList[i][19:]
+                jFile = fileList[j][19:]
+                print(cnt, i, j, iFile, jFile, result)
+                iPhone, src, dst = moveFromiPhone(fileList[i], fileList[j])
+                if result == 'match':
+                    if iPhone:
+                        doMV(src, dst)
+                    else:
+                        print('NoPhoneMatch:', iFile, jFile)
+                elif isinstance(result, list):
+                    c = result[1]
+                    if c<= 2.0:
+                        if iPhone:
+                            iExt = iFile.split('/')[-1]
+                            jExt = jFile.split('/')[-1]
+                            if iExt == jExt:
+                                doMV(src, dst)
+                                print(f'maybe:   {c:10.4f} - {iFile:s} {jFile:s}')
+                            else:
+                                print(f'mayhaps: {c:10.4f} - {iFile:s} {jFile:s}')
 
 if __name__ == '__main__':
     # want unbuffered stdout for use with "tee"
