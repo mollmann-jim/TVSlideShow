@@ -119,7 +119,7 @@ class Picture:
                     self.files[dirNum] = {}
                 self.files[dirNum][fileNum] = {'rowNum' : rowNum, 'filename' : filename}
                 rowNum += 1
-            self.totalDirs = rowNum - 1
+            self.totalDirs = len(self.files)
 
         if len(self.group) == 0:
             #check for a new DB
