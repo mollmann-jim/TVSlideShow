@@ -265,7 +265,7 @@ class Pictures:
         if birthday is None and metadata.get('modifydate', False):
             time     = metadata['modifydate']
             with suppress(ValueError):
-                birthday = dt.datetime.strptime(time, '%Y-%m-%dT%H:%M:%S+00:00'
+                birthday = dt.datetime.strptime(time, '%Y-%m-%dT%H:%M:%S+00:00')
         if birthday is None and metadata.get('create', False): 
             time     = metadata['create']
             with suppress(ValueError):
@@ -411,8 +411,9 @@ class buildImageDB:
 
         ext = filename.split('.')[-1].lower()
         isPEF =  ext == 'pef'
+        isTIF =  ext == 'tif'
         # -auto-orient and/or rotate???
-        if fullname.split('.')[-1] == 'tif':
+        if isTIF:
             imageNum = '[0]'
         else:
             imageNum = ''
