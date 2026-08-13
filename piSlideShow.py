@@ -155,6 +155,8 @@ class Picture:
                 print('deletes:', deletes)
             for rowNum, dirNum, fileNum in deletes:
                 del self.files[dirNum][fileNum]
+                if len(self.files[dirNum]) == 0:
+                    del self.files[dirNum]
                 del self.rows[rowNum]
             if self.debug:
                 print('group:', self.group)
