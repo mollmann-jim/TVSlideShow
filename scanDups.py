@@ -18,7 +18,7 @@ class DB:
         self.debug   = debug
         self.picRoot = '/home/jim/pictures/'
         self.DB      = '/home/jim/tools/TVSlideShow.py/TVSlides.sql'
-        self.DB      = '/home/jim/tools/TVSlideShow.py/TVSlides.sql.20260731'
+        self.DB      = '/home/jim/tools/TVSlideShow.py/TVSlides.sql.20260804'
         self.DBtable = 'pictures'
         sqlite3.register_adapter(datetime.datetime, adapt_datetime)
         sqlite3.register_converter("DATETIME", convert_datetime)
@@ -37,6 +37,8 @@ class DB:
         fileCnt = 0
         for row in self.c:
             birthday, filename = row
+            if not os.path.isfile(self.picRoot + filename):
+                continue
             if birthday not in self.birthdays:
                 self.birthdays[birthday] = []
             self.birthdays[birthday].append(self.picRoot + filename)
@@ -113,7 +115,7 @@ class Images:
         for i in range(len(x)):
             #print(i, x[i], y[i])
             diff += abs(x[i] - y[i])
-        return [diff, diff / len(x)]
+        return [diff / len(x), diff]
    
         
     
@@ -128,7 +130,7 @@ def doCmd(command, printFailure = True, debug = False, input = None):
     if debug:
         print('doCmd:command:', command)
     result = subprocess.run(command, shell = True, stdout = subprocess.PIPE, \
-                            stderr=subprocess.STDOUT, input = input, check = False)
+                            stderr=subprocess.PIPE, input = input, check = False)
     if debug:
         if result.stdout is not None:
             print('stdout:' + '\n' + result.stdout.decode('utf-8'))
@@ -145,16 +147,22 @@ def doCmd(command, printFailure = True, debug = False, input = None):
 
 def doMV(src, dst):
     cmd = f'mv "{src:s}" "{dst:s}"'
-    print('CMD:', cmd)
-    doCmd(cmd)
+    #print('CMD:', cmd)
+    #doCmd(cmd)
 
 def moveFromiPhone(a, b):
     iPhoneAll = '2026.06.21.All.iPhone'
+    iPhoneOld = 'iPhone/201'
+    OldiPhone = iPhoneOld in a or iPhoneOld in b
     if iPhoneAll in a:
-        return True, a, b
+        return True, OldiPhone, a, b
     if iPhoneAll in b:
-        return True, b, a
-    return False, a, b
+        return True, OldiPhone, b, a
+    if iPhoneOld in a:
+        return True, OldiPhone, a, b
+    if iPhoneOld in b:
+        return True, OldiPhone, b, a
+    return False, OldiPhone, a, b
     
     
 def main():
@@ -184,24 +192,45 @@ def main():
                 result = image.pixelCompare(pixels[i], pixels[j])
                 iFile = fileList[i][19:]
                 jFile = fileList[j][19:]
-                print(cnt, i, j, iFile, jFile, result)
-                iPhone, src, dst = moveFromiPhone(fileList[i], fileList[j])
+                iPhone, iPhoneOld, src, dst = moveFromiPhone(fileList[i], fileList[j])
+                print(cnt, i, j, 'FT'[iPhone], 'FT'[iPhoneOld], result,
+                      iFile, jFile, end = ' ')
                 if result == 'match':
                     if iPhone:
                         doMV(src, dst)
+                        print('iPhone match =A')
                     else:
-                        print('NoPhoneMatch:', iFile, jFile)
+                        print('non-PhoneMatch =B')
                 elif isinstance(result, list):
-                    c = result[1]
-                    if c<= 2.0:
+                    avgDiff = result[0]
+                    if avgDiff <= 999102.0:
+                        iExt = iFile.split('/')[-1]
+                        jExt = jFile.split('/')[-1]
                         if iPhone:
-                            iExt = iFile.split('/')[-1]
-                            jExt = jFile.split('/')[-1]
                             if iExt == jExt:
                                 doMV(src, dst)
-                                print(f'maybe:   {c:10.4f} - {iFile:s} {jFile:s}')
+                                print(f'iPhone close =C')
                             else:
-                                print(f'mayhaps: {c:10.4f} - {iFile:s} {jFile:s}')
+                                doMV(src, dst)
+                                print(f'iPhone name non-match =D')
+                        else:
+                            if iExt == jExt:
+                                doMV(src, dst)
+                                print('non-iPhone close =E')
+                            else:
+                                #print('non-iPhone name non-match close =F')
+                                iDir =  '/'.join(iFile.split('/')[:-1])
+                                jDir =  '/'.join(jFile.split('/')[:-1])
+                                if iDir == jDir:
+                                    print('rapid fire? =F')
+                                else:
+                                    print('non-iPhone name non-match close =G')
+                    else:
+                        print(' diff too large =H')
+                        pass
+                else:
+                    print('length mismatch =I')
+                    pass
 
 if __name__ == '__main__':
     # want unbuffered stdout for use with "tee"
