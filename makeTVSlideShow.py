@@ -32,6 +32,7 @@ class Pictures:
     def __init__(self, pictureRoot, debug):
         self.debug           = debug
         self.debugRotateMsgs = False
+        self.rotatesBuilt    = False
         self.picRoot         = pictureRoot
         self.rotates         = {}
         self.filesInDir      = {}
@@ -145,10 +146,11 @@ class Pictures:
                 print('debugRotate: no possible rotates:', fullname)
 
     def getRotate(self, filename):
-        if len(self.rotates) == 0:
+        if len(self.rotates) == 0 and not self.rotatesBuilt:
             self.buildRotates()
             self.flopSlides()
             self.setupDebugRotate()
+            self.rotatesBuilt = True
         if self.rotates.get(filename, False):
             #print('rotate', filename, self.rotates[filename])
             return self.rotates[filename]
@@ -205,9 +207,10 @@ class Pictures:
                 labels[dir + file] = self.composeLabel(dir + file, labelData)
                 
     def getLabel(self, filename, orgImage):
-        meta = self.getLabelData(filename, orgImage)
+        meta  = self.getLabelData(filename, orgImage)
         label = self.composeLabel(filename, meta)
-        return label
+        meta['label'] = label
+        return meta
 
     def getLabelData(self, filename, orgImage):
         self.pp = pprint.PrettyPrinter(indent=4, sort_dicts=False)
@@ -227,18 +230,23 @@ class Pictures:
         metadata = {}
         for line in result.stdout.splitlines():
             #print('line:', line)
+            # malformed utf-8 from Laura
+            if b'unknown' in line:
+                continue
             try:
                 line = line.decode('utf-8').replace('date:', '').replace('dng:', '')
                 line = line.replace('exif:', '').replace('jpeg:', '')
             except Exception as e:
+                _, _, exc_traceBack = sys.exc_info()
+                lineNo  = exc_traceBack.tb_lineno
                 lineHex = line.hex(' ', bytes_per_sep = -4)
-                print(f'Skipping file {filename:s}')
+                print(f'Skipping file {filename:s} at line: {lineNo:d}')
                 print(f'line(hex): {lineHex:s}')
                 print(f' due to error: {e}')
                 for word in lineHex.split():
                     char = bytes.fromhex(word)
                     print(word, ' : ', char)
-                continue
+                #continue
             #print('B4 match:', line)
             match = kv_regex.match(line)
             if match:
@@ -277,6 +285,7 @@ class Pictures:
         if birthday is None:
             print(filename, 'needs birthday')
             pprint.pprint(metadata)
+        metadata['birthday'] = birthday
         if time is not None:
             label += time + '\n\n'
         if metadata.get('shutterspeedvalue', False):
@@ -314,6 +323,9 @@ class Pictures:
             # print('exposure.time:', metadata['exposure.time'])
             exp    = float(metadata['exposure.time'].split('/')[1])
             label += f' Exposure: 1 / {exp:5.0f}s\n'
+        if metadata.get('geometry', False):
+            geo    = metadata['geometry'].split('+')[0]
+            label += f'orgGeometry: {geo:s}\n'
         if metadata.get('make', False):
             label += f' Make: {metadata['make']:s}\n'
         if metadata.get('model', False):
@@ -359,7 +371,7 @@ class Pictures:
             else:
                 print('Conflicting fixup orientation:', orient, 'rotate:', rotate, filename)
         #print(label)
-        return label, birthday
+        return label
 
 class buildImageDB:
     def __init__(self, pictureRoot, debug):
@@ -393,7 +405,7 @@ class buildImageDB:
             ' );'
         self.c.execute(create)
 
-    def addPicture(self, filename, rotate, label, bday, orgImage,
+    def addPicture(self, filename, rotate, EXIF, orgImage,
                    dirNum, fileNum, picNum):
         workDir = '/tmp/'
         insert = 'INSERT OR REPLACE INTO ' + self.DBtable + ' (    \n' \
@@ -404,26 +416,26 @@ class buildImageDB:
         stat = os.stat(fullname)
         md5sum = hashlib.md5(orgImage).hexdigest()
 
-        print('addPicture:', picNum, filename, rotate, bday, stat.st_ino,
-              stat.st_size, md5sum, rotate)
-        values = [filename, rotate, stat.st_ino, md5sum, bday,
-                  stat.st_size, label, dirNum, fileNum]
+        print('addPicture:', picNum, filename, rotate, EXIF['birthday'],
+              stat.st_ino, stat.st_size, md5sum, rotate)
+        values = [filename, rotate, stat.st_ino, md5sum, EXIF['birthday'],
+                  stat.st_size, EXIF['label'], dirNum, fileNum]
 
         ext = filename.split('.')[-1].lower()
         isPEF =  ext == 'pef'
         isTIF =  ext == 'tif'
+        isHDR = 'HDR' in EXIF['format']
         # -auto-orient and/or rotate???
+        imageNum = PEF = strip = ''
         if isTIF:
             imageNum = '[0]'
-        else:
-            imageNum = ''
-        resize = ' -resize 1920x1080 '
         if isPEF:
-            cmd = 'magick PEF:- -auto-orient ' + rotate + resize  + \
-            ' -quality 95 jpeg:-'
-        else:
-            cmd = 'magick -' + imageNum + ' -auto-orient ' + rotate + resize  + \
-                ' -quality 95 jpeg:-'
+            PEF = 'PEF:'
+        if isHDR:
+            strip = ' -strip '
+        resize = ' -resize 1920x1080 '
+        cmd = 'magick ' + PEF+' - -auto-orient ' + rotate + resize  + \
+            strip + ' -quality 95 jpeg:-'
         result = doCmd(cmd, debug = False, input = orgImage)
 
         if result.returncode != 0:
@@ -431,26 +443,29 @@ class buildImageDB:
             self.imgFail += 1
             return False
         resizeImage = result.stdout
+
         try:
             width, height = self.get_jpeg_dimensions_from_bytes(resizeImage)
         except ValueError:
-            print('ABORT: addPicture: get_jpeg_dimensions_from_bytes:', filename)
+            print('ERROR: addPicture: get_jpeg_dimensions_from_bytes:', filename)
             self.imgFail += 1
+            width, height = 1720, 1080
             return False
 
         labelText  = workDir + 'label.txt'
         with open(labelText, 'w') as Label:
-            Label.write(label + '\n')
+            Label.write(EXIF['label'] + '\n')
         if width <= 1720:
-            cmd = 'magick - \\( -background "black" -fill "white" '     \
-                ' -font "NimbusSans-Bold" -pointsize 14 '               \
+            cmd = 'magick -  \\( -background "black" '     \
+                ' -fill "white" -font "NimbusSans-Bold" -pointsize 14 ' \
                 ' -interline-spacing 6 -size 200x -gravity NorthWest  ' \
                 ' caption:@' + labelText + ' \\) +append -'
             result = doCmd(cmd, input = resizeImage)
             if result.returncode != 0:
-                print('ABORT: addPicture: final image:', filename)
+                print('ERROR: addPicture: final image:', filename)
                 self.imgFail += 1
-                return False
+                result.stdout = resizeImage
+                #return False
         else:
             cmd = 'magick - -font NimbusSans-Bold -pointsize 20 -fill red' \
                 ' -stroke black -strokewidth 1 -gravity NorthEast '\
@@ -459,7 +474,8 @@ class buildImageDB:
             if result.returncode != 0:
                 print('ABORT: addPicture: final annotated image:', filename)
                 self.imgFail += 1
-                return False
+                result.stdout = resizeImage
+                #return False
         image = result.stdout
         values.append(image)
         self.c.execute(insert, values)
@@ -504,7 +520,7 @@ def doCmd(command, printFailure = True, debug = False, input = None):
     if debug:
         print('doCmd:command:', command)
     result = subprocess.run(command, shell = True, stdout = subprocess.PIPE, \
-                            stderr=subprocess.STDOUT, input = input, check = False)
+                            stderr=subprocess.PIPE, input = input, check = False)
     if debug:
         if result.stdout is not None:
             print('stdout:' + '\n' + result.stdout.decode('utf-8'))
@@ -522,7 +538,7 @@ def doCmd(command, printFailure = True, debug = False, input = None):
 def doCmdOrg(command):
     #print('doCmd:', command)
     result = subprocess.run(command, shell = True, stdout = subprocess.PIPE,
-                            stderr=subprocess.STDOUT, check = False)
+                            stderr=subprocess.PIPE, check = False)
     #print(result.returncode, ':', result.stdout.decode('utf-8'))
     return result.returncode
 
@@ -562,11 +578,11 @@ def main():
             try:
                 with open(pictureRoot + filename, 'rb') as image_file:
                     orgImage = image_file.read()
-                label, bday = pictures.getLabel(filename, orgImage)
+                EXIF = pictures.getLabel(filename, orgImage)
             except Exception as e:
                 print('ABORT: Failed initial read', filename, e)
             rotate = pictures.getRotate(filename)
-            build.addPicture(filename, rotate, label, bday, orgImage, dirNum, fileNum, picNum)
+            build.addPicture(filename, rotate, EXIF, orgImage, dirNum, fileNum, picNum)
                 
     
 if __name__ == '__main__':
