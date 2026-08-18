@@ -14,6 +14,8 @@ import sched
 import random
 import argparse
 import sqlite3
+import io
+import struct
 import pprint
 
 class Picture:
@@ -102,7 +104,7 @@ class Picture:
                   'first:', first, 'last:', last)
         return first, last
 
-    def Get1Picture(self):
+    def Get1Picture(self, workspace):
         self.n += 1
         # list idicies
         ROWNUM   = 0
@@ -166,13 +168,13 @@ class Picture:
                 print('group:', self.group)
 
         filename = self.group.pop(0)
-        select = 'SELECT image FROM ' + self.DBtable + ' WHERE filename = ? ;'
+        select = 'SELECT rotate, label FROM ' + self.DBtable + ' WHERE filename = ? ;'
         self.c.execute(select, (filename,))
-        (image,) = self.c.fetchone()
+        (rotate, label) = self.c.fetchone()
         when = datetime.datetime.now().replace(microsecond = 0)
-        print(f'{str(when):^19s}: {self.n:6d} {filename:s}')
+        print(f'{str(when):^19s}: {self.n:6d} - {workspace:2d} - {filename:s}')
         self.showStats(when)
-        return (filename, image)
+        return (filename, rotate, label)
 
     def showStats(self, when):
         if when.minute > 0:
@@ -190,29 +192,81 @@ class Slide:
     # new image every 5 minutes, if needed
     def __init__(self, workspace):
         #self.resolution = "1920x1080"
-        self.pictures   = Picture()
+        self.pictures    = Picture()
         #self.VolumeUp   = True
-        self.directory  = '/home/jim/tools/TVSlideShow.py/images/'
-        self.workspace  = workspace
-        self.idx        = 0
-        self.debug      = False
+        self.imageDir    = '/home/jim/tools/TVSlideShow.py/images/'
+        self.picRoot     = '/home/jim/pictures/'
+        self.workspace   = workspace
+        self.idx         = 0
+        self.debug       = False
 
     def Show1Slide(self):
-        (filename, image) = self.pictures.Get1Picture()
-        #print('Show1Slide', filename)
-        if image is None:
-            print('Image is "None". Skipping.')
-            return
+        workDir = '/tmp/'
+        (filename, rotate, label) = self.pictures.Get1Picture(self.workspace)
+        ext = filename.split('.')[-1].lower()
+        isPEF =  ext == 'pef'
+        isTIF =  ext == 'tif'
+        isHDR = 'HDR' in label
+        imageNum = PEF = strip = ''
+        if isTIF:
+            imageNum = '[0]'
+        if isPEF:
+            PEF = 'PEF:'
+        if isHDR:
+            strip = ' -strip '
         self.idx += 1
         idx = self.idx % 5
         wksp = f'{self.workspace:d}'
-        displayFile = self.directory + 'display.' + str(idx) + wksp +'.jpg'
-        resize = 'magick - -resize 3640x2088 -quality 95 jpeg:-'
-        result = doCmd(resize, input = image)
+        try:
+            with open(self.picRoot + filename, 'rb') as image_file:
+                orgImage = image_file.read()
+        except Exception as e:
+            print('ABORT: Failed initial read', filename, e)
+        #print('Show1Slide', filename)
+        if orgImage is None:
+            print('orgImage is "None". Skipping.')
+            return
+        
+        resize = ' -resize 3640x2088 '
+        cmd = 'magick ' + PEF + '- -auto-orient ' + rotate + resize  + \
+            strip + ' -quality 95 jpeg:-'
+        result = doCmd(cmd, debug = False, input = orgImage)
         if result.returncode != 0:
-            print('ERROR: Show1Slide resize image:', filename)
+            print('ERROR: Show1Slide: initial image:', filename)
+            result.stdout = orgImage
+        resizeImage = result.stdout
+        
+        try:
+            width, height = self.get_jpeg_dimensions_from_bytes(resizeImage)
+        except ValueError:
+            print('ERROR: addPicture: get_jpeg_dimensions_from_bytes:', filename)
+            width, height = 3440, 2160
+            
+        labelText  = f'{workDir:s}label{idx:d}{wksp:s}.txt'
+        with open(labelText, 'w') as Label:
+            Label.write(label + '\n')
+
+        if width <= 3440:
+            cmd = 'magick -  \\( -background "black" '     \
+                ' -fill "white" -font "NimbusSans-Bold" -pointsize 14 ' \
+                ' -interline-spacing 6 -size 200x -gravity NorthWest  ' \
+                ' caption:@' + labelText + ' \\) +append -'
+            result = doCmd(cmd, input = resizeImage)
+            if result.returncode != 0:
+                print('ERROR: Show1Slide: final image:', filename)
+                result.stdout = resizeImage
         else:
-            image = result.stdout
+            cmd = 'magick - -font NimbusSans-Bold -pointsize 20 -fill red' \
+                ' -stroke black -strokewidth 1 -gravity NorthEast '\
+                ' -annotate +0+0 @' + labelText + ' - '
+            result = doCmd(cmd, input = resizeImage)
+            if result.returncode != 0:
+                print('ERROR: addPicture: final annotated image:', filename)
+                result.stdout = resizeImage
+        image = result.stdout
+        
+        displayFile = self.imageDir + 'display.' + str(idx) + wksp +'.jpg'
+        
         with open(displayFile, 'wb') as display_file:
             size = display_file.write(image)
         #
@@ -228,6 +282,36 @@ class Slide:
                 '/last-image -s ' + displayFile
         #print(command)
         doCmd(command)
+        
+    def get_jpeg_dimensions_from_bytes(self, jpeg_bytes: bytes):
+        # Parse a JPEG byte string to determine the pixel dimensions (width, height).
+        # From Google AI
+        stream = io.BytesIO(jpeg_bytes)
+        # 1. Verify JPEG SOI (Start of Image) marker: \xff\xd8
+        if stream.read(2) != b'\xff\xd8':
+            stream.seek(0)
+            print('get_jpeg_dimensions_from_bytes:', stream.read(2))
+            raise ValueError("Not a valid JPEG file.")
+        while True:
+            # 2. Read the segment marker (usually \xff followed by a marker byte)
+            marker = stream.read(2)
+            if not marker or marker[0] != 0xff:
+                break
+            marker_type = marker[1]
+            # 3. Check for Start of Frame (SOF) markers (SOF0 to SOF2)
+            if 0xc0 <= marker_type <= 0xc2:
+                # Skip segment length (2 bytes) and precision (1 byte)
+                stream.read(3)
+                # Read Height and Width (2 bytes each, big-endian unsigned short)
+                height, width = struct.unpack('>HH', stream.read(4))
+                return width, height
+            # 4. Skip over non-SOF segments by reading their length
+            else:
+                length_bytes = stream.read(2)
+                if not length_bytes:
+                    break
+                segment_length = struct.unpack('>H', length_bytes)[0]
+                stream.seek(segment_length - 2, io.SEEK_CUR)
 
 class SlideTimer:
     # handle when to display a picture
