@@ -434,7 +434,7 @@ class buildImageDB:
         if isHDR:
             strip = ' -strip '
         resize = ' -resize 1920x1080 '
-        cmd = 'magick ' + PEF+' - -auto-orient ' + rotate + resize  + \
+        cmd = 'magick ' + PEF + '- -auto-orient ' + rotate + resize  + \
             strip + ' -quality 95 jpeg:-'
         result = doCmd(cmd, debug = False, input = orgImage)
 
