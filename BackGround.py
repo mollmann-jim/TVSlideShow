@@ -18,17 +18,21 @@ import io
 import struct
 import pprint
 
-class Picture:
+class Pictures:
     # select and get an image
-    def __init__(self):
-        self.directory = '/home/jim/bin/Slides/'
-        self.srcIP     = '192.168.123.4'
+    def __init__(self, scheduler):
+        self.scheduler = scheduler
         self.DB        = '/home/jim/tools/TVSlideShow.py/TVSlides.sql'
+        self.DBptr     = '/home/jim/tools/TVSlideShow.py/BackGround.DBname'
         self.DBtable   = 'pictures'
-        self.DBmtime   = {'sql.new' : 0, 'sql.old' : 0, 'sql' : 0}
-        self.myDBmtime = 0
+        self.getDBname()
+        self.DBmorgTime= datetime.datetime.fromtimestamp(os.path.getmtime(self.DB),
+                                                         datetime.UTC)
+        self.DBmtime   = self.DBmorgTime
+        self.DBnewMod  = None
+        self.lastChk   = datetime.datetime(1954, 7, 6, tzinfo = datetime.timezone.utc)
+        #self.GetDB(init = True)
         self.GetDB()
-        self.myDBmtime = self.DBmtime['sql']
         self.db        = sqlite3.connect(self.DB)
         self.c         = self.db.cursor()
         countrows      = 'SELECT COUNT(*) FROM ' + self.DBtable + ';'
@@ -36,57 +40,74 @@ class Picture:
         self.Rows      = self.c.fetchone()[0]
         print('rows:', self.Rows)
         #self.rowsleft  = list(range(1, self.Rows))
-        self.n         = 0
-        self.groupSize = 10
-        self.group     = []
+        self.groupSize = 11
+        self.groupSize = 5
+        #self.group     = []
         self.rows      = {}
         self.files     = {}
         self.totalDirs = 0
         self.debug     = False
 
+    def getDBname(self):
+        if os.path.isfile(self.DBptr):
+            with open(self.DBptr, 'r') as DBptr:
+                DBname = DBptr.read()
+            DBname  = DBname.replace('\n', '')
+            newName = DBname != self.DB
+            print(self.DB)
+            print(DBname)
+            print(newName)
+            if newName:
+                self.DB = DBname
+            return newName
+        return False
+
+    #def GetDB(self, init = False):
     def GetDB(self):
         # just restart if the database is newer
-        pass
-        '''
         restart = False
-        debug = False
-        DBbase = '.'.join(self.DB.split('.')[0 : -1]) + '.'
-        for suffix in self.DBmtime.keys():
-            db = DBbase + suffix
-            if os.path.exists(db):
-                self.DBmtime[suffix] = os.path.getmtime(db)
-            else:
-                self.DBmtime[suffix] = 0
-            if debug: print(DBbase + suffix, ':', self.DBmtime[suffix])
-        curDB = DBbase + 'sql'
-        oldDB = curDB + '.old'
-        newDB = curDB + '.new'
-        if self.myDBmtime and self.DBmtime['sql'] > self.myDBmtime:
-            print('DB updated:', curDB)
-            restart = True
-        elif self.DBmtime['sql.new'] > self.DBmtime['sql']:
-            print(newDB, ' is newer than ', curDB)
-            restart = True
-            if os.path.exists(oldDB):
-                command = 'rm ' + oldDB
-                command = 'mv ' + oldDB + '.gone'
-                doCmd(command, debug)
-            command = ' '.join(['mv', curDB, oldDB])
-            doCmd(command, debug)
-            command = ' '.join(['mv', newDB, curDB])
-            doCmd(command, debug)
-        else:
-            pass
-        with open('/proc/' + str(os.getpid()) + '/cmdline', 'r') as cmdline:
-            myCmd = cmdline.read()
+        debug   = True
+        now     = datetime.datetime.now(datetime.UTC)
+        fuzz    = datetime.timedelta(seconds = 15 * 60)
+        chkMin  = datetime.timedelta(seconds =  1 * 60)
+        if now - self.lastChk < chkMin:
+            return
+        self.lastChk = now
+        restart = self.getDBname()
+        print('restart:', restart)
+        if not restart:
+            lastMod = datetime.datetime.fromtimestamp(os.path.getmtime(self.DB),
+                                                      datetime.UTC)
+            if self.DBmorgTime == lastMod:
+                return
+            print('GetDB:', lastMod)
+            if lastMod != self.DBmtime:
+                if self.DBnewMod is None:
+                    self.DBnewMod = lastMod
+                self.DBmtime = lastMod
+            if debug:
+                print(now)
+                print(self.DBmtime)
+                print(self.DBnewMod)
+                print('now - self.DBmtime: ', now - self.DBmtime)
+                print('fuzz, 2 * fuzz:', fuzz, 4 * fuzz)
+            if  self.DBnewMod is not None and debug:
+                print('now - self.DBnewMod:', now - self.DBnewMod)
+            if now - self.DBmtime > fuzz:
+                print('now - self.DBmtime > fuzz   --> restart')
+                restart = True
+            if self.DBnewMod is not None  and now - self.DBnewMod > 2 * fuzz:
+                print('now - self.DBnewMod > 4 * fuzz --> restart')
+                restart = True
         if restart:
+            with open('/proc/' + str(os.getpid()) + '/cmdline', 'r') as cmdline:
+                myCmd = cmdline.read()
             args = myCmd[0:-1].split('\0')
             path = args.pop(0)
             py = os.path.abspath(__file__)
             print('DB updated, restarting')
             os.execv(py, args)
-        '''
-
+            
     def getRange(self, idx, length):
         if length < self.groupSize:
             return 0, length - 1
@@ -104,8 +125,7 @@ class Picture:
                   'first:', first, 'last:', last)
         return first, last
 
-    def Get1Picture(self, workspace):
-        self.n += 1
+    def newGroup(self, workspace):
         # list idicies
         ROWNUM   = 0
         DIRFILE  = 1
@@ -127,82 +147,108 @@ class Picture:
                 rowNum += 1
             self.totalDirs = len(self.files)
 
-        if len(self.group) == 0:
-            #check for a new DB
-            self.GetDB()
-            # need a new group of pictures to show
-            selection = random.randint(0, len(self.rows) - 1)
-            # sel = [ rowNum, [ dirNum, fileNum ] ]
-            sel = list(sorted(self.rows.items()))[selection]
-            if self.debug:
-                print('sel:', sel)
-            rowNum  = sel[ROWNUM]
-            dirNum  = sel[DIRFILE][DIRNUM]
-            fileNum = sel[DIRFILE][FILENUM]
-            if self.debug:
-                print(selection, rowNum, dirNum, fileNum)
-            i = 0
-            for fileNo in self.files[dirNum]:
-                if fileNo == self.rows[rowNum][FILENUM]:
-                    myIdx = i
-                    break
-                i += 1
-            myDirLen = len(self.files[self.rows[rowNum][DIRNUM]])
-            first, last = self.getRange(myIdx, myDirLen)
-            i = 0
-            deletes = []
-            for fileNo in self.files[dirNum]:
-                if i >= first and i <= last:
-                    self.group.append(self.files[dirNum][fileNo]['filename'])
-                    rowNum = self.files[dirNum][fileNo]['rowNum']
-                    deletes.append([rowNum, dirNum, fileNo])
-                i += 1
-            if self.debug:
-                print('deletes:', deletes)
-            for rowNum, dirNum, fileNum in deletes:
-                del self.files[dirNum][fileNum]
-                if len(self.files[dirNum]) == 0:
-                    del self.files[dirNum]
-                del self.rows[rowNum]
-            if self.debug:
-                print('group:', self.group)
+        group = []
+        #check for a new DB
+        self.GetDB()
+        # need a new group of pictures to show
+        selection = random.randint(0, len(self.rows) - 1)
+        # sel = [ rowNum, [ dirNum, fileNum ] ]
+        sel = list(sorted(self.rows.items()))[selection]
+        if self.debug:
+            print(f'sel({workspace:d}): {sel}')
+        rowNum  = sel[ROWNUM]
+        dirNum  = sel[DIRFILE][DIRNUM]
+        fileNum = sel[DIRFILE][FILENUM]
+        if self.debug:
+            print(f'({workspace:d} selection: {selection:d} '
+                  'row: {rowNum:s} dir: {dirNum:s} file: {rowNum:s}')
+        i = 0
+        for fileNo in self.files[dirNum]:
+            if fileNo == self.rows[rowNum][FILENUM]:
+                myIdx = i
+                break
+            i += 1
+        myDirLen = len(self.files[self.rows[rowNum][DIRNUM]])
+        first, last = self.getRange(myIdx, myDirLen)
+        i = 0
+        deletes = []
+        for fileNo in self.files[dirNum]:
+            if i >= first and i <= last:
+                group.append(self.files[dirNum][fileNo]['filename'])
+                rowNum = self.files[dirNum][fileNo]['rowNum']
+                deletes.append([rowNum, dirNum, fileNo])
+            i += 1
+        if self.debug:
+            print(f'deletes({workspace:d}): {deletes}')
+        for rowNum, dirNum, fileNum in deletes:
+            del self.files[dirNum][fileNum]
+            if len(self.files[dirNum]) == 0:
+                del self.files[dirNum]
+            del self.rows[rowNum]
+        if self.debug:
+            print(f'group({workspace:d}): {group}')
+        return group
 
-        filename = self.group.pop(0)
+    def oneFileInfo(self, filename, workspace):
         select = 'SELECT rotate, label FROM ' + self.DBtable + ' WHERE filename = ? ;'
         self.c.execute(select, (filename,))
         (rotate, label) = self.c.fetchone()
-        when = datetime.datetime.now().replace(microsecond = 0)
-        print(f'{str(when):^19s}: {self.n:6d} - {workspace:2d} - {filename:s}')
-        self.showStats(when)
+        #self.showStats(when)
         return (filename, rotate, label)
 
-    def showStats(self, when):
-        if when.minute > 0:
-            return
+    def showStats(self):
+        when = datetime.datetime.now().replace(microsecond = 0)
         picsLeft = 0
         for dir in self.files:
             picsLeft += len(self.files[dir])
-        picsLeft += len(self.group)
         print(f'{str(when):^19s}: {picsLeft:6d} of {self.Rows:6d} pictures remain')
         print(f'{" ":^19s}: {len(self.files):6d} of {self.totalDirs:6d} directories remain')
+        self.starttime = self.starttime + datetime.timedelta(seconds = self.frequency)
+        self.scheduler.enterabs(time.mktime(self.starttime.timetuple()), 1,
+                                self.showStats)
 
-
+    def Schedule(self, frequency = None):
+        print('Pictures:Schedule:showStats:frequency:', frequency)
+        if frequency:
+            self.frequency = frequency
+        now = datetime.datetime.now()
+        firstTime = now.replace(hour = 0, minute = 0, second = 0, microsecond = 0) -\
+                    datetime.timedelta(weeks = 1)
+        while firstTime < now:
+            firstTime += datetime.timedelta(seconds = self.frequency)
+        self.starttime = firstTime
+        self.scheduler.enterabs(time.mktime(self.starttime.timetuple()), 1,
+                                self.showStats)
+        
 class Slide:
     # build & display image for screen
     # new image every 5 minutes, if needed
-    def __init__(self, workspace):
+    def __init__(self, pictures, workspace):
         #self.resolution = "1920x1080"
-        self.pictures    = Picture()
+        self.pictures    = pictures
         #self.VolumeUp   = True
         self.imageDir    = '/home/jim/tools/TVSlideShow.py/images/'
         self.picRoot     = '/home/jim/pictures/'
         self.workspace   = workspace
+        self.group       = []
         self.idx         = 0
+        self.n           = 0
         self.debug       = False
+
+    def nextFile(self):
+        if len(self.group) == 0:
+            self.group = self.pictures.newGroup(self.workspace)
+        filename = self.group.pop()
+        #(filename, rotate, label) = self.pictures.Get1Picture(self.workspace)
+        return self.pictures.oneFileInfo(filename, self.workspace)
 
     def Show1Slide(self):
         workDir = '/tmp/'
-        (filename, rotate, label) = self.pictures.Get1Picture(self.workspace)
+        self.n += 1
+        when    = datetime.datetime.now().replace(microsecond = 0)
+        wksp    = f'{self.workspace:d}'
+        (filename, rotate, label) = self.nextFile()
+        print(f'{str(when):^19s}: {self.n:6d} - {wksp:2s} - {filename:s}')
         ext = filename.split('.')[-1].lower()
         isPEF =  ext == 'pef'
         isTIF =  ext == 'tif'
@@ -216,7 +262,6 @@ class Slide:
             strip = ' -strip '
         self.idx += 1
         idx = self.idx % 5
-        wksp = f'{self.workspace:d}'
         try:
             with open(self.picRoot + filename, 'rb') as image_file:
                 orgImage = image_file.read()
@@ -227,7 +272,8 @@ class Slide:
             print('orgImage is "None". Skipping.')
             return
         
-        resize = ' -resize 3640x2088 '
+        resize = ' -resize 3840x2088 '
+        resize = ' -resize 3840x2100 '
         cmd = 'magick ' + PEF + '- -auto-orient ' + rotate + resize  + \
             strip + ' -quality 95 jpeg:-'
         result = doCmd(cmd, debug = False, input = orgImage)
@@ -249,7 +295,7 @@ class Slide:
         if width <= 3440:
             cmd = 'magick -  \\( -background "black" '     \
                 ' -fill "white" -font "NimbusSans-Bold" -pointsize 14 ' \
-                ' -interline-spacing 6 -size 200x -gravity NorthWest  ' \
+                ' -interline-spacing 6 -size 400x -gravity NorthWest  ' \
                 ' caption:@' + labelText + ' \\) +append -'
             result = doCmd(cmd, input = resizeImage)
             if result.returncode != 0:
@@ -313,22 +359,25 @@ class Slide:
                 segment_length = struct.unpack('>H', length_bytes)[0]
                 stream.seek(segment_length - 2, io.SEEK_CUR)
 
+
 class SlideTimer:
     # handle when to display a picture
-    def __init__(self, scheduler, workspace):
+    def __init__(self, scheduler, pictures, workspace):
         self.showSlide = True
         self.scheduler = scheduler
+        self.pictures  = pictures
         self.frequency = 5 * 60
         self.starttime = 0
-        self.slides    = Slide(workspace)
+        self.slides    = Slide(pictures, workspace)
         self.workspace = workspace
 
     def Schedule(self, frequency = None):
         if frequency:
             self.frequency = frequency
         now = datetime.datetime.now()
-        firstTime = now.replace(hour = 0, minute = 0, second = 0, microsecond = 0) -\
-                    datetime.timedelta(weeks = 1)
+        firstTime = now.replace(hour = 0, minute = 0,
+                                second = self.workspace, microsecond = 0) \
+                                - datetime.timedelta(weeks = 1)
         while firstTime < now:
             firstTime += datetime.timedelta(seconds = self.frequency)
         self.starttime = firstTime
@@ -344,6 +393,7 @@ class SlideTimer:
                                 kwargs = {'WKSP': self.workspace})
         self.slides.Show1Slide()
         
+
 def doCmd(command, printFailure = True, debug = False, input = None):
     if debug:
         print('doCmd:command:', command)
@@ -356,31 +406,30 @@ def doCmd(command, printFailure = True, debug = False, input = None):
             print('stderr:' + '\n' + result.stderr.decode('utf-8'))
 
     if result.returncode != 0 & printFailure:
-        #print(result.stdout)
         print('Failed: RC:', result.returncode, command)
-        print(result.stderr)
+        print('stderr:', result.stderr)
     if debug:
         print('doCmd:result:', result)
     return result
 
 def main():
     scheduler = sched.scheduler(time.time, time.sleep)
-    #power = Power(scheduler)
-    for workspace in range(7,9):
-        slides = SlideTimer(scheduler, workspace)
-        slides.Schedule(frequency = 1 * 60)
-    #power.Schedule()
+    pictures  = Pictures(scheduler)
+    pictures.Schedule(frequency = 60 * 60)
+    for workspace in range(10):
+        slides = SlideTimer(scheduler, pictures, workspace)
+        slides.Schedule(frequency = 11 * 60)
 
-    print(len(scheduler.queue))
-    #print(scheduler.queue)
+    print('scheduler.queue: length:', len(scheduler.queue))
     for event in scheduler.queue:
-        print('Next:', datetime.datetime.fromtimestamp(event.time).replace(microsecond = 0),
+        print('Next:',   datetime.datetime.fromtimestamp(event.time).replace(microsecond = 0),
               'Action:', str(event.action).split(' ')[2],
-              'Pri:', event.priority,
-              'Arg:', event.argument,
-              'WKSP:', event.kwargs['WKSP'])
+              'Pri:',     event.priority,
+              'Arg:',     event.argument,
+              'WKSP:',    event.kwargs.get('WKSP', ''))
 
     scheduler.run()
 
 if __name__ == '__main__':
   main()
+
