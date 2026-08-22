@@ -255,7 +255,7 @@ class Pictures:
                 value = match.group(2).strip()
                 metadata[key] = value
                 #print('match:', line, key, value)
-        #pprint.pprint(metadata)
+        pprint.pprint(metadata)
         return metadata
 
     def composeLabel(self, filename, metadata):
@@ -325,9 +325,16 @@ class Pictures:
             label += f' Exposure: 1 / {exp:5.0f}s\n'
         if metadata.get('geometry', False):
             geo    = metadata['geometry'].split('+')[0]
-            label += f'orgGeometry: {geo:s}\n'
+            label += f' orgGeometry: {geo:s}\n'
+        if metadata.get('format', False):
+            fmt    = metadata['format'].split()[0]
+            label += f' orgFormat: {fmt:s}\n'
         if metadata.get('make', False):
-            label += f' Make: {metadata['make']:s}\n'
+            make   = metadata['make']
+            if metadata.get('camera.model.name', False):
+                model = metadata['camera.model.name']
+                make += f'{make:s} {model:s}'
+            label += f' Make: {make:s}\n'
         if metadata.get('model', False):
             label += f' Model: {metadata['model']:s}\n'
         if metadata.get('lensmodel', False):
@@ -370,7 +377,7 @@ class Pictures:
                 print('Double fixup orientation:', orient, 'rotate:', rotate, filename)
             else:
                 print('Conflicting fixup orientation:', orient, 'rotate:', rotate, filename)
-        #print(label)
+        print(label)
         return label
 
 class buildImageDB:
@@ -424,7 +431,7 @@ class buildImageDB:
         ext = filename.split('.')[-1].lower()
         isPEF =  ext == 'pef'
         isTIF =  ext == 'tif'
-        isHDR = 'HDR' in EXIF['format']
+        isHDR = 'HDR' in EXIF.get('format', '')
         # -auto-orient and/or rotate???
         imageNum = PEF = strip = ''
         if isTIF:
@@ -564,6 +571,7 @@ def main():
     #skip        = 999999
     #skip        = 10000
     skip        = 1
+    skip        = 6485
     dirNum      = 0
     for dir in sorted(picList):
         dirNum += 1
