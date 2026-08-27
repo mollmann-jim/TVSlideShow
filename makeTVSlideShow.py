@@ -255,7 +255,7 @@ class Pictures:
                 value = match.group(2).strip()
                 metadata[key] = value
                 #print('match:', line, key, value)
-        pprint.pprint(metadata)
+        #pprint.pprint(metadata)
         return metadata
 
     def composeLabel(self, filename, metadata):
@@ -325,10 +325,7 @@ class Pictures:
             label += f' Exposure: 1 / {exp:5.0f}s\n'
         if metadata.get('geometry', False):
             geo    = metadata['geometry'].split('+')[0]
-            label += f' orgGeometry: {geo:s}\n'
-        if metadata.get('format', False):
-            fmt    = metadata['format'].split()[0]
-            label += f' orgFormat: {fmt:s}\n'
+            label += f' OrgGeometry: {geo:s}\n ScaledGeo:    XXXXxXXXX\n'
         if metadata.get('make', False):
             make   = metadata['make']
             if metadata.get('camera.model.name', False):
@@ -377,7 +374,7 @@ class Pictures:
                 print('Double fixup orientation:', orient, 'rotate:', rotate, filename)
             else:
                 print('Conflicting fixup orientation:', orient, 'rotate:', rotate, filename)
-        print(label)
+        #print(label)
         return label
 
 class buildImageDB:
@@ -458,6 +455,9 @@ class buildImageDB:
             self.imgFail += 1
             width, height = 1720, 1080
             return False
+        
+        # add gemotry after resize
+        EXIF['label'] = EXIF['label'].replace('XXXXxXXXX',f'{width:4d}x{height:4d}')
 
         labelText  = workDir + 'label.txt'
         with open(labelText, 'w') as Label:
@@ -487,7 +487,7 @@ class buildImageDB:
         values.append(image)
         self.c.execute(insert, values)
         self.db.commit()
-        if False:
+        if True:
             testFile = f'{workDir:s}{picNum:06d}.jpg'
             with open(testFile, 'wb') as Image:
                 Image.write(image)
@@ -569,9 +569,9 @@ def main():
     build       = buildImageDB(pictureRoot, debug)
     picNum      = -1
     #skip        = 999999
-    #skip        = 10000
-    skip        = 1
-    skip        = 6485
+    skip        = 10000
+    #skip        = 1
+    #skip        = 6485
     dirNum      = 0
     for dir in sorted(picList):
         dirNum += 1
