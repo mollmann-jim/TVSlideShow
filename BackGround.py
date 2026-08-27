@@ -249,6 +249,9 @@ class Slide:
         wksp    = f'{self.workspace:d}'
         (filename, rotate, label) = self.nextFile()
         print(f'{str(when):^19s}: {self.n:6d} - {wksp:2s} - {filename:s}')
+        if not os.path.isfile(self.picRoot + filename):
+            print('File not found:', self.picRoot + filename)
+            return
         ext = filename.split('.')[-1].lower()
         isPEF =  ext == 'pef'
         isTIF =  ext == 'tif'
@@ -267,6 +270,7 @@ class Slide:
                 orgImage = image_file.read()
         except Exception as e:
             print('ABORT: Failed initial read', filename, e)
+            orgImage = None
         #print('Show1Slide', filename)
         if orgImage is None:
             print('orgImage is "None". Skipping.')
