@@ -415,7 +415,7 @@ class buildImageDB:
         self.c.execute(create)
 
     def addPicture(self, filename, rotate, EXIF, orgImage,
-                   dirNum, fileNum, picNum):
+                   dirNum, fileNum, picNum, images):
         workDir = '/tmp/'
         insert = 'INSERT OR REPLACE INTO ' + self.DBtable + ' (    \n' \
             ' filename, rotate, inode, md5sum, birthday, filesize, \n' \
@@ -492,7 +492,7 @@ class buildImageDB:
         values.append(image)
         self.c.execute(insert, values)
         self.db.commit()
-        if False:
+        if images:
             testFile = f'{workDir:s}{picNum:06d}.jpg'
             with open(testFile, 'wb') as Image:
                 Image.write(image)
@@ -565,10 +565,13 @@ def doCmdRetry(command, trys = 5, delay = 7):
     
 def main():
     globalParser = argparse.ArgumentParser(description = 'global parms')
-    globalParser.add_argument('-t', '--test',    default=False,
-                              action='store_true',  help='test mode')
     globalParser.add_argument('-s', '--skip',    type = int, default=1,
                               help='process every "skip" photo')
+    globalParser.add_argument('-t', '--test',    default=False,
+                              action='store_true',  help='test mode')
+    globalParser.add_argument('-i', '--images',  default=False,
+                              action='store_true',
+                              help='saave images to /tmp')
     globalParser.add_argument('-S', '--stats',   default=True,
                               action='store_false',
                               help='display picture counts')
@@ -577,16 +580,18 @@ def main():
                               help='display rotate debugs')
     globalParser.add_argument('-D', '--dropDB',   default=False,
                               action='store_true',  help='drop DB table')
+    
     args = globalParser.parse_args()
     print(args)
     skip        = args.skip
     test        = args.test
+    images      = args.images
     dropDB      = args.dropDB
     stats       = args.stats
     rotMsgs     = args.rotMsgs
     if skip > 1:
         test = True
-    print(skip, test, dropDB, stats, rotMsgs)
+    print(skip, test, dropDB, stats, rotMsgs, images)
     pictureRoot = '/home/jim/pictures/'
     pictures    = Pictures(pictureRoot, stats, rotMsgs)
     picList     = pictures.getPictureFiles()
@@ -611,7 +616,8 @@ def main():
             except Exception as e:
                 print('ABORT: Failed initial read', filename, e)
             rotate = pictures.getRotate(filename)
-            build.addPicture(filename, rotate, EXIF, orgImage, dirNum, fileNum, picNum)
+            build.addPicture(filename, rotate, EXIF, orgImage, dirNum,\
+                             fileNum, picNum, images)
                 
     
 if __name__ == '__main__':
