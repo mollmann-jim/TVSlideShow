@@ -29,9 +29,9 @@ def convert_datetime(val):
     return dt.datetime.fromisoformat(val)
 
 class Pictures:
-    def __init__(self, pictureRoot, debug):
-        self.debug           = debug
-        self.debugRotateMsgs = False
+    def __init__(self, pictureRoot, stats, rotMsgs):
+        self.stats           = stats
+        self.debugRotateMsgs = rotMsgs
         self.rotatesBuilt    = False
         self.picRoot         = pictureRoot
         self.rotates         = {}
@@ -53,7 +53,7 @@ class Pictures:
             if directory not in self.filesInDir:
                 self.filesInDir[directory] = []
             self.filesInDir[directory].append(str(picture.name))
-        if self.debug:
+        if self.stats:
             dirs, files = self.countFiles()
             print('getPictureFiles:', dirs, ' directories',
                   files, ' files in filesInDir after initial scan')
@@ -63,7 +63,7 @@ class Pictures:
                 if remove in dir:
                     del self.filesInDir[dir]
                     break
-        if self.debug:
+        if self.stats:
             dirs, files = self.countFiles()
             print('getPictureFiles:', dirs, ' directories',
                   files, ' in filesInDir after remove unwanted')
@@ -80,14 +80,14 @@ class Pictures:
         for dir in subDirs:
             del self.filesInDir[dir]
         self.cullFiles()
-        if self.debug:
+        if self.stats:
             dirs, files = self.countFiles()
             print('getPictureFiles:', dirs, ' directories',
                   files, ' files in filesInDir at end')
         return self.filesInDir
 
     def countFiles(self):
-        if self.debug:
+        if self.stats:
             cnt = 0
             for dir in self.filesInDir:
                 cnt += len(self.filesInDir[dir])
@@ -260,7 +260,10 @@ class Pictures:
 
     def composeLabel(self, filename, metadata):
         label = '\n\n '
-        label += filename.replace('/', '\n') +'\n'
+        # leave the '.' in the first 5 chars - yyyy.mm
+        # replace the rest with ' ' for magick caption/annotate to line break
+        label += filename[:5]
+        label += filename[5:].replace('.', ' ').replace('/', '\n') +'\n'
         birthday = time = None
         if metadata.get('datetime', False):
             time     = metadata['datetime']
@@ -378,10 +381,12 @@ class Pictures:
         return label
 
 class buildImageDB:
-    def __init__(self, pictureRoot, debug):
-        self.debug   = debug
+    def __init__(self, pictureRoot, test, dropDB):
+        self.dropDB  = dropDB
         self.picRoot = '/home/jim/pictures/'
         self.DB      = '/home/jim/tools/TVSlideShow.py/TVSlides.sql'
+        if test:
+            self.DB  = '/home/jim/tools/TVSlideShow.py/TVSlides.test.sql'
         self.DBtable = 'pictures'
         sqlite3.register_adapter(dt.datetime, adapt_datetime)
         sqlite3.register_converter("DATETIME", convert_datetime)
@@ -391,7 +396,7 @@ class buildImageDB:
         self.imgFail = 0
 
     def initDB(self):
-        if self.debug:
+        if self.dropDB:
             drop = 'DROP TABLE IF EXISTS ' + self.DBtable + ';'
             self.c.execute(drop)
         create = 'CREATE TABLE IF NOT EXISTS ' + self.DBtable + ' (  \n' +\
@@ -487,7 +492,7 @@ class buildImageDB:
         values.append(image)
         self.c.execute(insert, values)
         self.db.commit()
-        if True:
+        if False:
             testFile = f'{workDir:s}{picNum:06d}.jpg'
             with open(testFile, 'wb') as Image:
                 Image.write(image)
@@ -559,19 +564,35 @@ def doCmdRetry(command, trys = 5, delay = 7):
             time.sleep(delay)
     
 def main():
-    debug       = True
+    globalParser = argparse.ArgumentParser(description = 'global parms')
+    globalParser.add_argument('-t', '--test',    default=False,
+                              action='store_true',  help='test mode')
+    globalParser.add_argument('-s', '--skip',    type = int, default=1,
+                              help='process every "skip" photo')
+    globalParser.add_argument('-S', '--stats',   default=True,
+                              action='store_false',
+                              help='display picture counts')
+    globalParser.add_argument('-r', '--rotMsgs',   default=False,
+                              action='store_true',
+                              help='display rotate debugs')
+    globalParser.add_argument('-D', '--dropDB',   default=False,
+                              action='store_true',  help='drop DB table')
+    args = globalParser.parse_args()
+    print(args)
+    skip        = args.skip
+    test        = args.test
+    dropDB      = args.dropDB
+    stats       = args.stats
+    rotMsgs     = args.rotMsgs
+    if skip > 1:
+        test = True
+    print(skip, test, dropDB, stats, rotMsgs)
     pictureRoot = '/home/jim/pictures/'
-    pictures    = Pictures(pictureRoot, debug)
-    #pictures.picRoot = '/home/jim/pictures/Edgecliff/Edgecliff friends/'
+    pictures    = Pictures(pictureRoot, stats, rotMsgs)
     picList     = pictures.getPictureFiles()
-    #pictures.countLabelsNone)
     
-    build       = buildImageDB(pictureRoot, debug)
+    build       = buildImageDB(pictureRoot, test, dropDB)
     picNum      = -1
-    #skip        = 999999
-    skip        = 10000
-    #skip        = 1
-    #skip        = 6485
     dirNum      = 0
     for dir in sorted(picList):
         dirNum += 1
