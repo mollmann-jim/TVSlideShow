@@ -207,12 +207,13 @@ class Pictures:
                 labels[dir + file] = self.composeLabel(dir + file, labelData)
                 
     def getLabel(self, filename, orgImage):
+        print('getLabel:', filename, len(orgImage))
         meta  = self.getLabelData(filename, orgImage)
         label = self.composeLabel(filename, meta)
         meta['label'] = label
         return meta
 
-    def getLabelData(self, filename, orgImage):
+    def getLabelDataOld(self, filename, orgImage):
         self.pp = pprint.PrettyPrinter(indent=4, sort_dicts=False)
         ext = filename.split('.')[-1].lower()
         isPEF =  ext == 'pef'
@@ -257,8 +258,30 @@ class Pictures:
                 #print('match:', line, key, value)
         #pprint.pprint(metadata)
         return metadata
+    
+    def getLabelData(self, filename, orgImage):
+        self.pp  = pprint.PrettyPrinter(indent=4, sort_dicts=False)
+        fileName = self.picRoot + filename
+        '''
+        result = subprocess.run(['/usr/bin/perl', 'exif.std.pl', '-'], 
+                            stdout = subprocess.PIPE, stderr=subprocess.PIPE,
+                            input = orgImage, check = False)
+        '''
+        result = subprocess.run(['/usr/bin/perl', 'exif.pl', fileName], 
+                            stdout = subprocess.PIPE, stderr=subprocess.PIPE,
+                            input = orgImage, check = False)
+        #print('RC:', result.returncode)
+        #print('stderr:', result.stderr)
+        #print('stdout:', result.stdout)
+        metadata = {}
+        for line in io.BytesIO(result.stdout):
+            #key, value = line.split(b':', maxsplit=1)
+            key, value = line.decode('utf-8').split(':', maxsplit=1)
+            metadata[key.strip()] = value.strip()
+        self.pp.pprint(metadata)
+        return metadata
 
-    def composeLabel(self, filename, metadata):
+    def composeLabelOld(self, filename, metadata):
         label = '\n\n '
         # leave the '.' in the first 5 chars - yyyy.mm
         # replace the rest with ' ' for magick caption/annotate to line break
@@ -380,6 +403,37 @@ class Pictures:
         #print(label)
         return label
 
+    def composeLabel(self, filename, metadata):
+        label = '\n\n '
+        # leave the '.' in the first 10 chars - yyyy.mm
+        # replace the rest with ' ' for magick caption/annotate to line break
+        label += filename[:10]
+        label += filename[10:].replace('.', ' ').replace('/', '\n') +'\n'
+        birthday = time = None
+        if metadata.get('DateCreated', False):
+            time     = metadata['DateCreated']
+            with suppress(ValueError):
+                birthday = dt.datetime.strptime(time, '%Y:%m:%d %H:%M:%S%z')
+            print('DateCreated', birthday)
+        if birthday is None and  metadata.get('DateCreated', False):
+            time     = metadata['DateCreated']
+            with suppress(ValueError):
+                birthday = dt.datetime.strptime(time, '%Y:%m:%d')
+            print('DateCreated(date only', birthday)
+        if birthday is None and  metadata.get('FileModifyDate', False):
+            time     = metadata['FileModifyDate']
+            with suppress(ValueError):
+                birthday = dt.datetime.strptime(time, '%Y:%m:%d %H:%M:%S%z')
+            print('FileModifyDate', birthday)
+            
+        if birthday is None:
+            print(filename, 'needs birthday')
+            dateMeta = {k: v for k, v in metadata.items() if 'Date' in k}
+            pprint.pprint(dateMeta)
+        metadata['birthday'] = birthday
+        #print(label)
+        return label
+    
 class buildImageDB:
     def __init__(self, pictureRoot, test, dropDB):
         self.dropDB  = dropDB
@@ -488,6 +542,8 @@ class buildImageDB:
                 self.imgFail += 1
                 result.stdout = resizeImage
                 #return False
+            else:    # debug
+                print('annotate: ', filename)
         image = result.stdout
         values.append(image)
         self.c.execute(insert, values)
@@ -580,7 +636,7 @@ def main():
                               help='display rotate debugs')
     globalParser.add_argument('-D', '--dropDB',   default=False,
                               action='store_true',  help='drop DB table')
-    
+
     args = globalParser.parse_args()
     print(args)
     skip        = args.skip
@@ -608,7 +664,7 @@ def main():
             if picNum % skip != 0:
                 continue
             filename = dir + file
-            #print(f'{i:6d} : {filename:s}')
+            print(f'{picNum:6d} : {filename:s}')
             try:
                 with open(pictureRoot + filename, 'rb') as image_file:
                     orgImage = image_file.read()
