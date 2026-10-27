@@ -21,6 +21,8 @@ import random
 from contextlib import suppress
 import io
 import struct
+import traceback
+
 
 def adapt_datetime(dt):
     return dt.isoformat(sep=' ').replace('T', ' ')
@@ -207,7 +209,6 @@ class Pictures:
                 labels[dir + file] = self.composeLabel(dir + file, labelData)
                 
     def getLabel(self, filename, orgImage):
-        print('getLabel:', filename, len(orgImage))
         meta  = self.getLabelData(filename, orgImage)
         label = self.composeLabel(filename, meta)
         meta['label'] = label
@@ -276,9 +277,10 @@ class Pictures:
         metadata = {}
         for line in io.BytesIO(result.stdout):
             #key, value = line.split(b':', maxsplit=1)
-            key, value = line.decode('utf-8').split(':', maxsplit=1)
-            metadata[key.strip()] = value.strip()
-        self.pp.pprint(metadata)
+            if len(line) > 2:   # empty line guard
+                key, value = line.decode('utf-8').split(':', maxsplit=1)
+                metadata[key.strip()] = value.strip()
+        #self.pp.pprint(metadata)
         return metadata
 
     def composeLabelOld(self, filename, metadata):
@@ -408,7 +410,7 @@ class Pictures:
         # leave the '.' in the first 10 chars - yyyy.mm
         # replace the rest with ' ' for magick caption/annotate to line break
         label += filename[:10]
-        label += filename[10:].replace('.', ' ').replace('/', '\n') +'\n'
+        label += filename[10:].replace('.', ' ').replace('/', '\n ') +'\n'
         birthday = time = None
         if metadata.get('DateCreated', False):
             time     = metadata['DateCreated']
@@ -424,14 +426,75 @@ class Pictures:
             time     = metadata['FileModifyDate']
             with suppress(ValueError):
                 birthday = dt.datetime.strptime(time, '%Y:%m:%d %H:%M:%S%z')
-            print('FileModifyDate', birthday)
             
         if birthday is None:
             print(filename, 'needs birthday')
             dateMeta = {k: v for k, v in metadata.items() if 'Date' in k}
             pprint.pprint(dateMeta)
         metadata['birthday'] = birthday
-        #print(label)
+        if time is not None:
+            label += ' ' + time + '\n\n'
+            label += ' ' + str(birthday) + '\n\n'
+        if metadata.get('ShutterSpeed', False):
+            label += f' ShutterSpeed: {metadata['ShutterSpeed']:s} s\n'
+        if metadata.get('Aperture', False):
+            label += f' Aperture : f {metadata['Aperture']:s}\n'
+        if metadata.get('MaxApertureValue', False):
+            label += f' MaxApertureValue : f {metadata['MaxApertureValue']:s} s\n'  
+        if metadata.get('ISO', False):
+            label += f' ISO : {metadata['ISO']:s}\n'
+        if metadata.get('ExposureTime', False):
+            label += f' ExposureTime : {metadata['ExposureTime']:s} \n'
+        if metadata.get('FocalLength', False):
+            label += f' FocalLength : {metadata['FocalLength']:s}\n'
+        if metadata.get('FocalLength35efl', False):
+            fl = metadata['FocalLength35efl'].split(':')[-1]
+            label += f' FocalLength (35mm) : {fl:s}\n'
+        if metadata.get('HyperfocalDistance', False):
+            hf = metadata['HyperfocalDistance']
+            hff = float(hf.split()[0]) * 3.28084
+            label += f' HyperfocalDistance : {hf:s}  {hff:5.1f}\'\n'
+        if metadata.get('LensModel', False):
+            label += f' LensModel : {metadata['LensModel']:s}\n'
+        if metadata.get('LensFocalLength', False):
+            label += f' LensFocalLength : {metadata['LensFocalLength']:s}\n'
+        if metadata.get('LensFStops', False):
+            label += f' LensFStops : {metadata['LensFStops']:s}\n'
+        if metadata.get('Make', False):
+            label += f' Make : {metadata['Make']:s}\n'
+        if metadata.get('Model', False):
+            label += f' Model : {metadata['Model']:s}\n'
+        if metadata.get('Flash', False):
+            label += f' Flash : {metadata['Flash']:s}\n'
+        if metadata.get('ExposureProgram', False):
+            label += f' ExposureProgram : {metadata['ExposureProgram']:s}\n'
+        if metadata.get('ExposureCompensation', False):
+            label += f' ExposureCompensation : {metadata['ExposureCompensation']:s}\n'
+        if metadata.get('ImageSize', False):
+            geo    = metadata['ImageSize']
+            label += f' OrgGeometry: {geo:s}\n ScaledGeo:   XXXXxXXXX\n'
+        if metadata.get('Megapixels', False):
+            label += f' Megapixels : {metadata['Megapixels']:s}\n'
+        if metadata.get('GPSLatitude', False):
+            label += f' GPSLatitude : {metadata['GPSLatitude']:s}\n'
+        if metadata.get('GPSLongitude', False):
+            label += f' GPSLongitude : {metadata['GPSLongitude']:s}\n'
+        if metadata.get('GPSAltitude (1)', False):
+            alt    = float(metadata['GPSAltitude (1)'].split()[0])
+            altFt  = alt * 3.28084
+            label += f' GPSAltitude : {alt:6.1f} m  {altFt:6.1f}\'\n'
+        if metadata.get('GPSImgDirection', False):
+            dir    = float(metadata['GPSImgDirection'])
+            label += f' GPSImgDirection : {dir:4.0f} deg\n'
+        if metadata.get('GPSSpeed', False):
+            spd    = float(metadata['GPSSpeed'])
+            spdMPH = spd * 0.621371
+            label += f' GPSSpeed : {spd:6.2f} km/h  {spdMPH:6.2f} mph\n'
+        if metadata.get('GPSDestBearing', False):
+            dir    = float(metadata['GPSDestBearing'])
+            label += f' GPSDestBearing : {dir:4.0f} deg\n'
+            
+        print(label)
         return label
     
 class buildImageDB:
@@ -671,6 +734,10 @@ def main():
                 EXIF = pictures.getLabel(filename, orgImage)
             except Exception as e:
                 print('ABORT: Failed initial read', filename, e)
+                _, _, exc_traceBack = sys.exc_info()
+                lineNo  = exc_traceBack.tb_lineno
+                print(f'Skipping file {filename:s} at line: {lineNo:d}')
+                traceback.print_exc()
             rotate = pictures.getRotate(filename)
             build.addPicture(filename, rotate, EXIF, orgImage, dirNum,\
                              fileNum, picNum, images)
