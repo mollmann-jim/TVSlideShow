@@ -263,11 +263,6 @@ class Pictures:
     def getLabelData(self, filename):
         self.pp  = pprint.PrettyPrinter(indent=4, sort_dicts=False)
         fileName = self.picRoot + filename
-        '''
-        result = subprocess.run(['/usr/bin/perl', 'exif.std.pl', '-'], 
-                            stdout = subprocess.PIPE, stderr=subprocess.PIPE,
-                            input = orgImage, check = False)
-        '''
         result = subprocess.run(['/usr/bin/perl', 'exif.pl', fileName], 
                             stdout = subprocess.PIPE, stderr=subprocess.PIPE,
                             check = False)
@@ -276,7 +271,6 @@ class Pictures:
         #print('stdout:', result.stdout)
         metadata = {}
         for line in io.BytesIO(result.stdout):
-            #key, value = line.split(b':', maxsplit=1)
             if len(line) > 2:   # empty line guard
                 key, value = line.decode('utf-8').split(':', maxsplit=1)
                 metadata[key.strip()] = value.strip()
@@ -416,12 +410,10 @@ class Pictures:
             time     = metadata['DateCreated']
             with suppress(ValueError):
                 birthday = dt.datetime.strptime(time, '%Y:%m:%d %H:%M:%S%z')
-            print('DateCreated', birthday)
         if birthday is None and  metadata.get('DateCreated', False):
             time     = metadata['DateCreated']
             with suppress(ValueError):
                 birthday = dt.datetime.strptime(time, '%Y:%m:%d')
-            print('DateCreated(date only', birthday)
         if birthday is None and  metadata.get('FileModifyDate', False):
             time     = metadata['FileModifyDate']
             with suppress(ValueError):
@@ -494,8 +486,34 @@ class Pictures:
         if metadata.get('GPSDestBearing', False):
             dir    = float(metadata['GPSDestBearing'])
             label += f' GPSDestBearing : {dir:4.0f} deg\n'
+        # Does    Rotation and  Orientation disagree ???
+        rot = metadata.get('Rotation', None)
+        ori = metadata.get('Orientation', None)
+        if rot is not None and ori is not None:
+            if rot == ori:
+                #print('ROTATE match:', rot, ori)
+                pass
+            else:
+               print('ROTATE NO match:', rot, ori)
+        else:
+            #print('ROTATE NONE match:', rot, ori)
+            pass
             
-        print(label)
+        if metadata.get('Orientation', False):
+            orient = metadata['Orientation']
+            rotate = self.getRotate(filename)
+            if rotate == 'flop' or rotate == '':
+                pass
+            #elif rotate != '' and (orient == 'TopLeft' or orient == 'Undefined'):
+            elif rotate != '' and 'normal' in orient:
+                print('Rotate only orientation:', orient, 'rotate:', rotate, filename)
+            elif (rotate == 'R180' and '???' in orient) or \
+                 (rotate == 'R90'  and '90 CW' in orient) or \
+                 (rotate == 'L90'  and '270 CW' in orient) :
+                print('Double fixup orientation:', orient, 'rotate:', rotate, filename)
+            else:
+                print('Conflicting fixup orientation:', orient, 'rotate:', rotate, filename)
+        #print(label)
         return label
     
 class buildImageDB:
@@ -727,7 +745,7 @@ def main():
             if picNum % skip != 0:
                 continue
             filename = dir + file
-            print(f'{picNum:6d} : {filename:s}')
+            #print(f'{i:6d} : {filename:s}')
             try:
                 with open(pictureRoot + filename, 'rb') as image_file:
                     orgImage = image_file.read()
