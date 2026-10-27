@@ -208,8 +208,8 @@ class Pictures:
                 labelData = self.getLabelData(dir + file)
                 labels[dir + file] = self.composeLabel(dir + file, labelData)
                 
-    def getLabel(self, filename, orgImage):
-        meta  = self.getLabelData(filename, orgImage)
+    def getLabel(self, filename):
+        meta  = self.getLabelData(filename)
         label = self.composeLabel(filename, meta)
         meta['label'] = label
         return meta
@@ -260,7 +260,7 @@ class Pictures:
         #pprint.pprint(metadata)
         return metadata
     
-    def getLabelData(self, filename, orgImage):
+    def getLabelData(self, filename):
         self.pp  = pprint.PrettyPrinter(indent=4, sort_dicts=False)
         fileName = self.picRoot + filename
         '''
@@ -270,7 +270,7 @@ class Pictures:
         '''
         result = subprocess.run(['/usr/bin/perl', 'exif.pl', fileName], 
                             stdout = subprocess.PIPE, stderr=subprocess.PIPE,
-                            input = orgImage, check = False)
+                            check = False)
         #print('RC:', result.returncode)
         #print('stderr:', result.stderr)
         #print('stdout:', result.stdout)
@@ -434,13 +434,14 @@ class Pictures:
         metadata['birthday'] = birthday
         if time is not None:
             label += ' ' + time + '\n\n'
-            label += ' ' + str(birthday) + '\n\n'
+            #label += ' ' + str(birthday) + '\n\n'
+
         if metadata.get('ShutterSpeed', False):
             label += f' ShutterSpeed: {metadata['ShutterSpeed']:s} s\n'
         if metadata.get('Aperture', False):
             label += f' Aperture : f {metadata['Aperture']:s}\n'
         if metadata.get('MaxApertureValue', False):
-            label += f' MaxApertureValue : f {metadata['MaxApertureValue']:s} s\n'  
+            label += f' MaxApertureValue : f {metadata['MaxApertureValue']:s}\n'
         if metadata.get('ISO', False):
             label += f' ISO : {metadata['ISO']:s}\n'
         if metadata.get('ExposureTime', False):
@@ -578,9 +579,8 @@ class buildImageDB:
             width, height = 1720, 1080
             return False
         
-        # add gemotry after resize
+        # add gemotry after resize.
         EXIF['label'] = EXIF['label'].replace('XXXXxXXXX',f'{width:4d}x{height:4d}')
-
         labelText  = workDir + 'label.txt'
         with open(labelText, 'w') as Label:
             Label.write(EXIF['label'] + '\n')
@@ -731,7 +731,7 @@ def main():
             try:
                 with open(pictureRoot + filename, 'rb') as image_file:
                     orgImage = image_file.read()
-                EXIF = pictures.getLabel(filename, orgImage)
+                EXIF = pictures.getLabel(filename)
             except Exception as e:
                 print('ABORT: Failed initial read', filename, e)
                 _, _, exc_traceBack = sys.exc_info()
