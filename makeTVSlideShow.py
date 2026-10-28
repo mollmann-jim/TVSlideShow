@@ -22,6 +22,7 @@ from contextlib import suppress
 import io
 import struct
 import traceback
+import inspect
 
 
 def adapt_datetime(dt):
@@ -271,9 +272,13 @@ class Pictures:
         #print('stdout:', result.stdout)
         metadata = {}
         for line in io.BytesIO(result.stdout):
-            if len(line) > 2:   # empty line guard
-                key, value = line.decode('utf-8').split(':', maxsplit=1)
-                metadata[key.strip()] = value.strip()
+            if b':' in line:   # empty line guard
+                try:
+                    key, value = line.decode('utf-8').split(':', maxsplit=1)
+                    metadata[key.strip()] = value.strip()
+                except UnicodeDecodeError as e:
+                    print('ERROR: decode failed', filename, e)
+                    print(line)
         #self.pp.pprint(metadata)
         return metadata
 
@@ -552,6 +557,7 @@ class buildImageDB:
 
     def addPicture(self, filename, rotate, EXIF, orgImage,
                    dirNum, fileNum, picNum, images):
+        annotate = False   # DEBUG
         workDir = '/tmp/'
         insert = 'INSERT OR REPLACE INTO ' + self.DBtable + ' (    \n' \
             ' filename, rotate, inode, md5sum, birthday, filesize, \n' \
@@ -584,7 +590,8 @@ class buildImageDB:
         result = doCmd(cmd, debug = False, input = orgImage)
 
         if result.returncode != 0:
-            print('ABORT: addPicture: initial image:', filename)
+            print('ABORT: addPicture: initial image:', filename,
+                  'line#:', inspect.currentframe().f_lineno)
             self.imgFail += 1
             return False
         resizeImage = result.stdout
@@ -619,17 +626,19 @@ class buildImageDB:
                 ' -annotate +0+0 @' + labelText + ' - '
             result = doCmd(cmd, input = resizeImage)
             if result.returncode != 0:
-                print('ABORT: addPicture: final annotated image:', filename)
+                print('ABORT: addPicture: final annotated image:', filename,
+                      'line#:', inspect.currentframe().f_lineno)
                 self.imgFail += 1
                 result.stdout = resizeImage
                 #return False
             else:    # debug
                 print('annotate: ', filename)
+                annotate = True
         image = result.stdout
         values.append(image)
         self.c.execute(insert, values)
         self.db.commit()
-        if images:
+        if images or annotate: #DEBUG
             testFile = f'{workDir:s}{picNum:06d}.jpg'
             with open(testFile, 'wb') as Image:
                 Image.write(image)
