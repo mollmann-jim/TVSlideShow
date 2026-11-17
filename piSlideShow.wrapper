@@ -1,0 +1,19 @@
+#!/bin/bash
+set -x
+WHERE=/home/jim/tools/TVSlideShow.py/Logs/piSlideShow
+# keep only the newest
+REMOVE=$(ls -t $WHERE.* | sed 1,20d)
+if [ -n "$REMOVE" ]; then
+    /bin/rm $REMOVE
+fi
+
+OUT=$WHERE.$(/bin/date +%F-%T | /bin/tr : .);
+touch $OUT
+OUTtail=/tmp/BGslideshow.out
+rm $OUTtail
+ln -s $OUT $OUTtail
+
+while true; do
+    /home/jim/tools/TVSlideShow.py/piSlideShow.py 2>&1 >> $OUT;
+    sleep 47
+done
